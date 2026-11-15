@@ -3,10 +3,10 @@
 Amiga music tracker. 68000 to 68060, Kickstart 2.04 or newer, 1 MB chip RAM.
 By Tom Beyer, Oliver Ickler, Haavard Pedersen and Akustikrausch (Andreas Wendorf), 2026.
 
-[![video: space warz - opus 1 by rez of eclipse, 28 channels, protracker 4.1.2 in the rtg window on a full hd workbench](docs/screenshots/release/pt41_video_28ch.png)](https://youtu.be/IpsjcYhZxCw)
+[![video: a 28 channel module, protracker 4.1.2 in the rtg window on a full hd workbench](docs/screenshots/release/pt41_video_28ch.png)](https://youtu.be/IpsjcYhZxCw)
 
-*Video on YouTube: Space Warz - Opus 1 by Rez of Eclipse, 28 channels, in the
-RTG window on a Full HD Workbench.*
+*Video on YouTube: a 28 channel module in the RTG window on a Full HD
+Workbench.*
 
 ProTracker 4.1.2. Up to 32 channels, graphics cards, sound cards, and the
 editor you know.
@@ -95,7 +95,7 @@ The full list is in `WhatsNew.txt` in the archive.
 
 ## AmiGUS sound card
 
-![high strung techno by kenny hammond, 16 channels on the amigus, all tracks side by side in the window on the full hd workbench of a real a1200](docs/screenshots/release/pt41_a1200_amigus_16ch.png)
+![16 channels on the amigus, all tracks side by side in the window on the full hd workbench of a real a1200](docs/screenshots/release/pt41_a1200_amigus_16ch.png)
 
 With an AmiGUS card and `amigus.library` installed, SETUP -> OUTPUT ->
 AMIGUS plays every track on its own voice of the card's wavetable. Nothing
@@ -259,19 +259,17 @@ API: `libpt4/include/pt4.h`, more in `libpt4/README.md`.
 
 ## screens
 
-![space warz - opus 1 by rez of eclipse, 28 channels on the amigus, the window filling the full hd workbench of a real a1200](docs/screenshots/release/pt41_a1200_rtg_28ch_fullscreen.png)
+![28 channels on the amigus, the window filling the full hd workbench of a real a1200](docs/screenshots/release/pt41_a1200_rtg_28ch_fullscreen.png)
 
-*Space Warz - Opus 1 by Rez of Eclipse, 28 channels on the AmiGUS, the window
-filling the Full HD Workbench.*
+*28 channels on the AmiGUS, the window filling the Full HD Workbench.*
 
-![protracker 4.1 in a window on the full hd workbench of a real a1200 with pistorm, playing high strung techno by kenny hammond](docs/screenshots/release/pt41_a1200_rtg_workbench.png)
+![protracker 4.1 in a window on the full hd workbench of a real a1200 with pistorm](docs/screenshots/release/pt41_a1200_rtg_workbench.png)
 
-*ProTracker 4.1.2 in a window on the Workbench, High Strung Techno by Kenny
-Hammond.*
+*ProTracker 4.1.2 in a window on the Workbench.*
 
-![a source of light by dustbin of nemesis, 8 tracks playing](docs/screenshots/release/pt41_a1200_8ch_play_1.png)
+![8 tracks playing](docs/screenshots/release/pt41_a1200_8ch_play_1.png)
 
-*A Source of Light by Dustbin of Nemesis, 8 tracks with scopes.*
+*8 tracks with scopes.*
 
 ![sampler](docs/screenshots/release/pt41_a1200_sampler.png)
 
