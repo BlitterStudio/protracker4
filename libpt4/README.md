@@ -61,25 +61,29 @@ float code, for `pt4_render_f32`).
 `pt4play MODULE -o out.wav [--rate HZ] [--float] [--path auto|paula|mixer|wide] [--seconds S] [--loops N]
 [--mute 1,5] [--stereo 0..4] [--interp] [--dyn-mixer] [--notes-ext] [--row0] [--tempo BPM] [--pairs out.raw] [--info]`
 
-`--pairs` writes the four int8 pair streams of the mixer path one after the other, the layout of PT's
-`PT:mixdump.raw`.
+`--pairs` writes the four int8 pair streams of the mixer path one after the other, for comparing with
+recordings of PT's mixer.
 
-## Verification
+## Tests
 
-In the ProTracker 4.1 development tree (not part of the public source):
-- `tools/pt4_ref.py list` compares with PT 4.1 references in `test/results/pt41ref/` (mix dumps of the debug
-  build, byte for byte, and tick traces; wide modules against the register log of an emulated AmiGUS via
-  `pt4test vtrace`, `tools/pt4_agus_cmp.py`).
-- `tools/pt4_trace_cmp.py`, `tools/pt41_pitch_check.py`, `tools/pt4_openmpt_cmp.py`, unit tests in
-  `test/pt4test.c`, test modules from `tools/mk_pt41_testdata.py` in `testdata/`.
+`make test` runs the unit tests in `test/pt4test.c` on the modules in `testdata/`, `make fuzz` feeds the loader
+and the replayer random data under ASan/UBSan. During development the output was compared byte for byte with what
+ProTracker 4.1 itself plays: the mixer output and tick traces of 4 and 8 channel modules, and for 9 to 32 channels
+the register writes to the AmiGUS.
 
-## Differences from PT 4.1 by design
+## Where the library goes its own way
 
-- Paula path: no analogue filters, no DMA period limits; E0x (LED filter) is ignored; 8x0 colour is ignored.
-- Mute (`pt4_mute`) silences the output of a channel; the replayer keeps running (PT's track switch stops notes).
-- Song end: F00 or an order played a second time (PT loops forever; `pt4_set_loop(s, 1)` does that too).
-- PT keeps the samples-per-tick fraction from before play start; the library starts at 0. Sample counts per tick
-  can therefore differ by one from a PT recording (the reference test searches the start fraction).
-- 81y backwards on PT crosses 32 KB address windows with a wrong position (see `docs/PT41_FORMAT.md` 10); the
-  library implements the documented semantics.
-- DYN `loopseg >= nseg` (PT: endless loop or garbage) is treated as no loop.
+libpt4 is made for players and tools on any system. A few things only make sense on a real Amiga or are faults of
+the original program; these are left out on purpose:
+
+- Amiga hardware: Paula's analogue output filter and its period limits are not emulated, so E0x (LED filter) and the
+  8x0 colour command change nothing in the sound.
+- Mute: `pt4_mute` silences a channel while its notes keep running, so it comes back in time. In PT the track switch
+  stops the notes.
+- Song end: a player needs an end, so a song stops at F00 or when an order comes a second time.
+  `pt4_set_loop(s, 1)` loops forever, as PT does.
+- Start: every song starts with an empty tick remainder. PT carries one over from before play started, so a
+  recording from PT can be off by one sample per tick; the music is the same.
+- Two faults of PT 4.1 are not copied. In PT, 81y (backwards) can lose its place when it crosses a 32 KB boundary, and a
+  DYN envelope whose loop segment lies outside the envelope loops endlessly or reads garbage. libpt4 plays 81y as
+  documented and treats such an envelope as one without a loop.
