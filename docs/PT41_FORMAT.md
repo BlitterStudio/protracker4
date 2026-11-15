@@ -4,7 +4,7 @@ For people who write a player that should load and play ProTracker 4.1 modules t
 Everything here is taken from the source in `src/` (state 2026-11-09). References are `file:label`
 (files relative to `src/`). Where the code leaves something open, the text says **unclear**. Nothing is
 taken from other trackers; where 4.1 matches ProTracker 2.3D, the text says so because the code is the
-same routine (the replayer `pt_Rp*` is the 2.3D replayer, see `docs/REPLAYER.md`).
+same routine (the replayer `pt_Rp*` is the 2.3D replayer).
 
 Terms: *cell* = 4 bytes of one channel in one row. *Tick* = one replayer call. *Counter* = tick within the
 row (`dat_RpCounter`, 0 = first tick). *Mixer* = the software mixer (`engine/mixer.asm`), *Paula path* =
@@ -43,7 +43,7 @@ The restart byte has no effect on playback: after the last position the song alw
 Sanitizing on load, samples 1-31 of a 31-sample module (`io/formats.asm:pt_FmtAfterHeader`):
 volume > 64 -> 64; finetune `AND $8F` (bits 4-6 cleared, bit 7 kept); replen 0 -> 1; repeat >= length ->
 repeat 0, replen 1; repeat + replen > length -> replen reduced by the overhang (min. 1).
-Up to 4.1.2 before Change 151 the loop end was summed with the stale high word of D1: depending on the
+Before 4.1.2 the loop end was summed with the stale high word of D1: depending on the
 caller (always with XPK packed files) every loop was stretched to the sample end and one-shot samples
 (repeat 0, replen 1) looped over their whole length. libpt4 was not affected.
 For every loaded sample (also 15-sample modules and `PT4X` entries): replen 0 -> 1 (`io/fileio.asm:pt_CheckRowDataSize`)
@@ -80,7 +80,7 @@ every position byte before counting patterns (`pt_FmtAfterHeader`, bit 0 is lost
 second 1024 bytes = channels 5-8 (`pt_FmtAfterPatterns`). Afterwards the module is `8CHN`.
 
 `OCTA` is only accepted at offset 1080; `OCTA`, `MMD0..3`, `SymM`, `DIGI`, `TFMX`, `FC14`, `SOAR` at file
-offset 0 are rejected (`docs/FORMATS_ROUNDTRIP.md` 1).
+offset 0 are rejected.
 
 Pattern cell (all formats): byte 0 high nibble + byte 2 high nibble = sample number,
 `sample = (byte0 & $F0) | (byte2 >> 4)`; period = `(byte0 & $0F) << 8 | byte1`; effect = `byte2 & $0F`,
@@ -105,7 +105,7 @@ A player that wants PT's result uses C = 100.
 (130 bytes, total 600); patterns follow at offset 600. Samples 16-31 are empty headers with replen 1. The id
 field becomes `M.K.`. Restart is set to `$7F`. On file load the requester answer 2 aborts ("unknown format"),
 answers 1 and 3 both take this branch (`io/formats.asm:pt_FmtCheckMore` `.unknown`, as in the original); the label
-on each button is in the requester bitmap (`docs/FORMATS_ROUNDTRIP.md` 4).
+on each button is in the requester bitmap.
 
 ### 1.6 Wide modules (9..32 channels)
 
@@ -257,10 +257,10 @@ compatibility switch.
 
 | Item | Rule | Source |
 |---|---|---|
-| Start | speed 6 after load (`pt_0E67`), tempo = setup TEMPO (default 125). The counter starts at 0 and is increased before the compare, so row 0 is read on the `speed`-th tick (2.3D semantics; `test/results/2026-10-09-15-mixer.md`) | `ui/mainui.asm`, `pt_RpMusic` |
+| Start | speed 6 after load (`pt_0E67`), tempo = setup TEMPO (default 125). The counter starts at 0 and is increased before the compare, so row 0 is read on the `speed`-th tick (2.3D semantics) | `ui/mainui.asm`, `pt_RpMusic` |
 | Tick | `counter++`; `counter >= speed` -> counter 0, new row (or pattern delay repeat); else effects only | `pt_RpMusic` |
 | CIA mode (default) | tick period = `floor(base / bpm)` E-clock cycles, base PAL 1 773 447, NTSC 1 789 773; E-clock PAL 709 379 Hz. bpm < 32 -> 32 | `sys/init.asm:pt_SetTempo` |
-| Tempo latch | the timer is restarted with `START` only (no `LOAD`): the new period applies from the next underflow, i.e. the tick that executed `Fxx` still has the old length (as 2.3D, Change 60) | `pt_SetTempo` (`ORI.B #$01`) |
+| Tempo latch | the timer is restarted with `START` only (no `LOAD`): the new period applies from the next underflow, i.e. the tick that executed `Fxx` still has the old length (as 2.3D) | `pt_SetTempo` (`ORI.B #$01`) |
 | VBlank mode | tick = vertical blank (50 Hz PAL); **every** `Fxx` with xx > 0 sets the speed | `pt_RpSetSpeed` |
 | `Fxx` | xx = 0: playback stops (`dat_RpPlayMode` = 0); xx < 32: speed = xx, counter = 0; xx >= 32 (CIA mode): tempo | `pt_RpSetSpeed` |
 | Song end | after the last position: position 0 (restart byte not used); `Bxx`: next position = xx, `& $7F`, >= song length -> 0 | `pt_RpNextPosition`, `pt_RpPositionJump` |
@@ -478,67 +478,28 @@ Hardware-dependent; a library does not need it.
 
 ---
 
-## 8 Reference data in this repository
+## 8 Comparing with PT 4.1
 
-- **Mix dump** (bit-exact reference for 7.2): debug build `make debugauto` (`-DDEBUGFX`) writes `PT:mixdump.raw` at
-  `F00`: 4 x 49 152 bytes (`DBG_MIXCH`), one signed 8-bit stream per Paula pair, each contiguous, starting at play
-  start (`engine/mixer.asm:dbg_MixDump`, `dbg_MixFlush`). The run's rate is the mixer rate (28 604 on the a4000-040
-  configuration). Existing evaluation: `tools/fx8_blend_check.py`, `tools/mixtest/cmp_dump.py`,
-  `tools/mixtest/cmp_streams.py`, `tools/mixtest/cmp_windows.py`; driver script example `test/auto/fx8_blend.txt`;
-  `tools/auto.py` copies `mixdump.raw`/`mixstat.bin`/`fxtrace.bin` from the PT directory.
-- **Tick trace** (`PT:fxtrace.bin`, `tools/fx_trace.py`): period/volume per tick for the Paula path.
-- The dump file is `4 x dbg_MixPos` bytes (not always 49 152): it is written at `F00`, and the mixer goes on mixing
-  about two ticks after the `F00` tick before the dump is closed. `mix_WriteFrac` (16-bit fraction of samples per
-  tick) is not reset at play start, so the first ticks of a dump can be one sample longer or shorter than a
-  rendering that starts with fraction 0 (`tools/pt4_ref.py` searches the start fraction).
-- **libpt4 references** (Change 138): `test/results/pt41ref/` (mix dumps and traces of the debug build, list
-  `refs.txt`; second set of 14.11.2026 from PT 4.1.2, `libpt4/test/drift_batch.sh`), compared by
-  `tools/pt4_ref.py list`. Wide modules: the register log of the fake AmiGUS (`tools/agus_pitch.py` scripts,
-  `dump_e_ring.bin`) against `pt4test vtrace` (`tools/pt4_agus_cmp.py`: note starts with sample offset, rates,
-  volume ticks, backwards starts).
-- **2.3D comparison**: `docs/SOUND_COMPARE.md`, `docs/COMPAT_23D.md`, `tools/compat/`.
+libpt4 was checked against recordings of PT 4.1 itself: the output of the software mixer (one signed 8-bit stream
+per Paula pair, from play start) and the period and volume of every tick on the Paula path; modules with 9 to 32
+channels against the register writes to the AmiGUS. Two things to know when you compare your own player with
+such a recording:
+
+- The mixer goes on mixing for about two ticks after the `F00` tick.
+- `mix_WriteFrac` (16-bit fraction of samples per tick) is not reset at play start, so the first ticks can be one
+  sample longer or shorter than a rendering that starts with fraction 0.
 
 ## 9 Test modules
 
-| Feature | Module(s) | Used by |
-|---|---|---|
-| all classic effects, 4ch | `test/modules/fxtest.mod` | `tools/make_fx_module.py`, `tools/fx_trace.py` |
-| classic effects on track 5, 8ch | `test/modules/fxtest8/fxtest8.mod` | `test/auto/fx_regression8.txt` |
-| 82y/83y/86y/87y/810 | `test/modules/fx8/fx8.mod` (M.K.) | `test/auto/fx8_effects.txt` |
-| 81y backwards | `test/modules/fx8/rev8.mod` (8CHN, saw loop) | `test/auto/fx8_reverse.txt` |
-| 84y blend | `test/modules/fx8blend/blend8.mod` | `test/auto/fx8_blend.txt`, `tools/fx8_blend_check.py` |
-| DYN envelope, 8ch | `test/modules/dyn8/dyn8.mod` | `test/auto/dyn8.txt`; generator `tools/mk_dyn_test.py` (dyntest.mod, zdyn.8svx) |
-| PT4X / samples 32..63 | `test/modules/smx40/smx40.mod` (40 samples), `test/modules/smx31/smx31.mod` (no block) | `tools/mk_smx.py` |
-| 8CHN / CD81 / FLT8 load | `test/modules/rt8/8chn/castle.mod`, `rt8/cd81/winter.mod`, `rt8/flt8/gidion.mod` | `tools/rt8_compare.py` |
-| narrow 6 channels | `test/modules/trk_follow/TRK 6.mod` (6CHN), `TRK 8.mod` | |
-| wide 32 channels | `test/modules/edge32/32ch_test.mod` (32CH) | |
-| periods outside 113..856 | `test/modules/oddper/o4.mod`, `o8.mod` | `tools/oddper_check.py` |
-| mixer vs libopenmpt (voice 5 alone) | `test/modules/mix/mixv5.mod` | `tools/mixtest/make_mixv5_module.py` |
-| direct vs mixed timing | `test/modules/sync8/sync8.mod` | `tools/mixtest/sync8_onsets.py` |
-| truncated file | `test/modules/trunc/fxtrunc.mod` | |
-| plain 4ch / 8ch | `test/modules/test4ch.mod`, `test8ch.mod`, `many/m01..m12.mod`, `edge4/4ch_lullaby.mod`, `realmod/blankzer.mod` | |
-| exe stubs | `test/modules/exe4load/test4ch.exe`, `exe8load/test8ch.exe` | |
+`libpt4/testdata/` holds small generated modules, one feature each: `fx81y`..`fx87y.mod` (8CHN, one sub-effect
+each), `pt4x_40.mod` / `pt4x_8ch.mod` (PT4X in 4 and 8 channel modules), `dyn_loop.mod` (DYN with `loopseg` 1 and
+9xx on the envelope sample), `mkk_70pat.mod`, `1chn.mod`, `9chn.mod`, `32ch.mod`, `flt8.mod`, `15smp.mod`,
+`trunc.mod`, `footer_8xy.mod` (footer 2.1), `tempo8.mod` (tempo changes, 8CHN), `pan8xx_plain.mod` (8xx panning
+without footer), `plain_mk.mod`, `loop64k8.mod` (8CHN, 72 000-byte sample with loop start 66 000 and `9xx` on it:
+mixer long/unsigned against Paula word/signed).
 
-Generated test modules (Change 138, `tools/mk_pt41_testdata.py` -> `libpt4/testdata/`): `fx81y`..`fx87y.mod`
-(8CHN, one sub-effect each), `pt4x_40.mod` / `pt4x_8ch.mod` (PT4X in 4 and 8 channel modules), `dyn_loop.mod`
-(DYN with `loopseg` 1 and 9xx on the envelope sample), `mkk_70pat.mod`, `1chn.mod`, `9chn.mod`, `32ch.mod`,
-`flt8.mod`, `15smp.mod`, `trunc.mod`, `footer_8xy.mod` (footer 2.1), `tempo8.mod` (tempo changes, 8CHN),
-`pan8xx_plain.mod` (8xx panning without footer), `plain_mk.mod`, `loop64k8.mod` (8CHN, 72 000-byte sample with loop
-start 66 000 and `9xx` on it: mixer long/unsigned against Paula word/signed).
-
-Song test set (`tools/mk_pt41_songs.py BASE.mod OUTDIR`): one real 4 channel song in ten variants, each
-with one group of 4.1 extras - `base` (saved form), `a_pt4x` (samples moved to slots 32.., output = base),
-`b_dyn_flat` (DYN envelopes at 64, output = base), `c_dyn_fade` / `c_baked` (falling envelope against the same
-envelope in the sample data), `d_slide` (Axy as `82y`/`83y`), `e_echo8` (8CHN, echo tracks with `81y`/`86y`/`87y`;
-tracks 5-8 muted = base on the mixer path), `f_all` (all extras, flags 7), `g_tempo8` (Fxx tempo and speed
-changes on the mixer path), `h_pt4x_bad` (PT4X header values that clamp, 1.2). `tools/pt41_songs_check.py`
-writes the libpt4 references (frames, SHA-256 whole and per second at 48000 and 44100 Hz, seek and mute
-probes, length) into `MANIFEST.json`; `tools/pt41_songs_emu.py` adds the proof from PT 4.1 itself (file saved
-by the editor byte equal, tick trace, mix dump). The set is generated and not part of the repository.
-
-Still not covered by a PT 4.1 recording: 15-sample modules (requester), `OCTA`, `TDZx`, `CD61`, `2/3/5/7CHN`,
-`86y` on pattern-delay ticks. Wide modules only through the fake AmiGUS of the debug build (12 and 28 channels,
-`agus_pitch`/`agus_ref28`).
+Not yet compared with a PT 4.1 recording: 15-sample modules, `OCTA`, `TDZx`, `CD61`, `2/3/5/7CHN`, `86y` on
+pattern-delay ticks.
 
 ## 10 Open points from the code
 
@@ -551,28 +512,25 @@ Still not covered by a PT 4.1 recording: 15-sample modules (requester), `OCTA`, 
 7. Answered: `PT4X` headers are clamped (1.2), the 15-sample branch is reached by requester answers 1 and 3 (1.5).
 8. Live play start clears only the high word of the counter (`CLR.W dat_RpCounter`, `ui/mainui.asm`); the stated
    start behaviour (row 0 on the `speed`-th tick) is the measured one with counter 0.
-9. (Change 138, from reading the code, not reproduced) 81y backwards in the 020 mixer: when a segment ends because
+9. (From reading the code, not reproduced.) 81y backwards in the 020 mixer: when a segment ends because
    the voice reaches the start of a 32 KB address window (`pt_MixVoiceAvail` `.back`), the position after the
    segment is usually below the window base; `pt_MixVoiceStore` takes `CLR.W`/`SWAP` of a negative offset as
    0..65535 and also uses `pos & ~$7fff` instead of `(pos-1) & ~$7fff` as the base. A backwards voice that crosses
    a 32 KB boundary of its sample address continues at a wrong address. Depends on where the sample lies in memory.
    Second reading (14.11.2026): `pt_MixVoiceAvail` `.back` and `pt_MixVoiceWindow` already use the `(pos-1)` base;
    only `pt_MixVoiceStore` takes `old_pos & $ffff8000`, wrong only when the old position is a multiple of 32 768.
-10. (Change 138) DYN `loopseg = nseg` makes `pt_BuildChunkList` write a loop entry that points to itself
+10. DYN `loopseg = nseg` makes `pt_BuildChunkList` write a loop entry that points to itself
     (`pt_RpAudInt` loops forever in the interrupt); `loopseg > nseg` points into the uninitialised list start.
     The loader accepts both.
-11. (Change 138) `pt_RpStartChunked` with `n_sampleoffset != 0` (any 9xx earlier on the channel, it is never
+11. `pt_RpStartChunked` with `n_sampleoffset != 0` (any 9xx earlier on the channel, it is never
     cleared) cuts the chunk list at `n_length`; if the chunks before the loop entry are shorter than `n_length`, the
     cut loop walks onto the loop entry and past the terminator.
-12. (Change 138) The software mixer's trigger test `aud_PER = 1` also fires when an effect writes period 1 (e.g.
+12. The software mixer's trigger test `aud_PER = 1` also fires when an effect writes period 1 (e.g.
     vibrato on a very low period): the voice restarts.
 
-## 11 libpt4 (Change 138)
+## 11 libpt4
 
-`libpt4/` is a C99 port of the replayer and the 020 mixer that follows this document. Results against PT 4.1
-(`tools/pt4_ref.py list`, state 2026-11-09, again 2026-11-14 with PT 4.1.2: fxtest, fxtest8, dyn8, rev8, fx8,
-blend8, loop64k8, and the wide modules of `agus_pitch`/`agus_ref28` on the fake card): all mix dumps in `test/results/pt41ref/` byte-identical over the whole
-dump or up to `F00` (blend8, rev8, fxtest8, dyn8, test8ch, fx81y..fx87y, footer_8xy, flt8, 1chn, pt4x_8ch,
-tempo8), all tick traces identical (fxtest, fxtest8, fx8, rev8, dyn8, blend8 and the generated modules). Paula-path
-pitch `3546895/period` within 0.01 % at 44.1/48/96 kHz, row length `floor(1773447/bpm)/709379` s
-(`tools/pt41_pitch_check.py`). Differences by design: README of `libpt4`.
+`libpt4/` is a C99 port of the replayer and the 020 mixer that follows this document. Against PT 4.1 (last checked
+with PT 4.1.2): the mixer output is byte for byte the same over the whole song or up to `F00`, the tick traces are
+the same, and on the Paula path the pitch `3546895/period` is within 0.01 % at 44.1/48/96 kHz with a row length of
+`floor(1773447/bpm)/709379` s. Where the library deliberately differs: README of `libpt4`.
