@@ -1,8 +1,11 @@
 	SECTION S_1,DATA
 
 SECSTRT_1:
-	DC.B	"        ProTracker 4.1.1 by Tom Beyer, Oliver Ickler,",10
-	DC.B	"        Haavard Pedersen, Akustikrausch (Andreas Wendorf)",10,10
+	DC.B	"        ProTracker 4.1.2 by Tom Beyer, Oliver Ickler,",10
+	DC.B	"        Haavard Pedersen, Akustikrausch (Andreas Wendorf)",10
+	DC.B	"        Build "
+	STAMP
+	DC.B	10
 	DC.B	"        Based on PT 3.15 (C) CryptoBurners and PT by Lars Hamre",10
 str_AboutMem:
 	DC.B	"        Free memory: Chip 000000 KB    Fast 000000 MB",10
@@ -15,7 +18,7 @@ str_AboutCpu:
 	DC.B	".",0
 	CNOP	0,2
 str_Version:
-	DC.B	"$VER: ProTracker 4.1.1 (03.11.2026) T.Beyer O.Ickler H.Pedersen Akustikrausch",0
+	DC.B	"$VER: ProTracker 4.1.2 (14.11.2026) T.Beyer O.Ickler H.Pedersen Akustikrausch",0
 	CNOP	0,2
 str_LoadingPowerPacked:
 	DC.B	"LOADING POWERPACKED FILE!",0
@@ -152,7 +155,7 @@ str_VersionTag2:
 	DS.L	7
 	DC.L	$233f0000
 	DS.L	7
-	DC.L	$233f2e49,$4e530000
+	DC.L	$233f2e54,$524b0000
 	DS.L	6
 	DC.L	$233f0000
 	DS.L	7
@@ -429,8 +432,8 @@ dat_1439:
 	DC.L	$00010001
 	DS.L	1
 	DC.L	$000a0009,$00020001,$026e0000,$027d0009
-	DC.L	$00030001,$0141006e,$01900078,$00040001
-	DC.L	$0191006e,$01e00078,$00050001,$01e1006e
+	DC.L	$00030001,$0141006e,$01900078,$00040000
+	DC.L	$0191006e,$01e00078,$00050000,$01e1006e
 	DC.L	$02300078,$00060001,$0231006e,$027d0078
 	DS.L	3
 dat_143A:

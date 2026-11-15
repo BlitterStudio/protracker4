@@ -90,7 +90,7 @@ dat_14F3:
 dat_14F4:
 	DS.L	64
 dat_GfxBitplaneBuf:
-	DS.L	38242
+	DS.L	7260			;41 screen save only (2 planes + sub panel)
 dat_WorkBuf1:
 	DS.L	20
 dat_WorkBuf2:
@@ -289,6 +289,7 @@ dbg_AutoLineLen: DS.W	1
 dbg_AutoLmb:	DS.B	1
 	EVEN
 dbg_AutoBtnEnd:	DS.W	1
+dbg_AutoKeyEnd:	DS.W	1
 dbg_TickCnt:	DS.W	1
 dbg_AutoRmb:	DS.B	1
 dbg_AutoKeyRel:	DS.B	1

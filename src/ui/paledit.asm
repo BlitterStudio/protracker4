@@ -343,11 +343,11 @@ pt_0788:
 	MOVE.L	#dat_1303,D2
 	MOVEQ	#68,D3
 	MOVEA.L	dat_DosLibBase,A6
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	dat_ModulePtr,D2
 	MOVEQ	#20,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	BSR.W	pt_LoadDosLib
 	BSR.W	pt_LoadDosLib
 	BSR.S	pt_078D
@@ -444,7 +444,7 @@ pt_0794:
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_1309,D2
 	MOVEQ	#52,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	(A7)+,D7
 	ADDQ.W	#1,D7
 	CMP.W	#$0020,D7
@@ -482,7 +482,7 @@ pt_0799:
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_1312,D2
 	MOVEQ	#4,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVEM.L	(A7)+,D5-D7/A0
 	ADDQ.W	#1,D5
 	CMP.W	D5,D7
@@ -501,14 +501,14 @@ pt_LoadDosLib:
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_1304,D2
 	MOVEQ	#2,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	RTS
 pt_079C:
 	MOVEA.L	dat_DosLibBase,A6
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_1305,D2
 	MOVEQ	#1,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	RTS
 pt_079D:
 	MOVE.L	D1,D6
@@ -523,7 +523,7 @@ pt_079D:
 	MOVE.L	#dat_1306,D2
 	MOVEQ	#18,D3
 	MOVEA.L	dat_DosLibBase,A6
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	MOVE.L	D1,D6
 	MOVEA.L	dat_ModulePtr,A6
@@ -603,7 +603,7 @@ pt_07A3:
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_1310,D2
 	MOVEQ	#68,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	BSR.W	pt_LoadDosLib
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RMB
@@ -1270,11 +1270,12 @@ pt_CalcScrollBitplane:
 	MOVE.W	D0,dat_1494
 	RTS
 pt_ScreenDragUpdate:
-	JSR	pt_MixTaskPoll
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	pt_MixTaskPoll		;41 callers keep their registers (mouse column)
+	JSR	pt_BreakChk41		;41 ctrl-c, ctrl-f in every input loop
 	IFD	DEBUGAUTO
 	JSR	dbg_AutoStep
 	ENDC
-	MOVEM.L	D0-D7/A0-A6,-(A7)
 	TST.W	dat_ScrollDelta
 	BEQ.S	pt_DisplayDone
 	BTST	#0,dat_UICheckFlag
@@ -1385,8 +1386,7 @@ pt_0822:
 	DBF	D0,pt_0822
 	LEA	(11040,A0),A0
 	DBF	D2,pt_0821
-	MOVEQ	#0,D0
-	BSR.W	pt_FreeUndoBuf
+	JSR	pt_TrkWrapEnd41
 	TST.L	dat_AllocBufPtr
 	BEQ.S	pt_0823
 	JMP	pt_LoadAllocBuf

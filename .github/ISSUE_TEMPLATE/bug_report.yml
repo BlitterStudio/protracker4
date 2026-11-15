@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in ProTracker 4.1 does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you can, try the same in ProTracker 2.3D or 4.0 Beta 2 first. If the old version does the same, it is original behaviour.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you did, what you expected, what happened instead. Steps from start if possible.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ProTracker version
+      description: Shown in the status line at start, e.g. 4.1.2
+    validations:
+      required: true
+  - type: input
+    id: amiga
+    attributes:
+      label: Amiga
+      description: Model, CPU or accelerator (PiStorm, Vampire, 030/040/060 ...), Kickstart and OS, chip and fast RAM. Emulator with version if not real hardware.
+    validations:
+      required: true
+  - type: input
+    id: sound
+    attributes:
+      label: Sound setup
+      description: 4 or 8 channels, OUTPUT and MIX RATE from SETUP, AHI driver and mode if used
+  - type: input
+    id: graphics
+    attributes:
+      label: Graphics setup
+      description: RTG off, card screen or Workbench window, which graphics card
+  - type: textarea
+    id: files
+    attributes:
+      label: Module, screenshot, recording
+      description: Attach the module if it only happens with one, and a screenshot or short recording if it is about sound or display.

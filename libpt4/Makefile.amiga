@@ -1,0 +1,25 @@
+# libpt4 for AmigaOS, 68000, no FPU: vbcc cross compiler (VBCC=/opt/vbcc, config aos68k).
+#   make -f Makefile.amiga        -> build/amiga/pt4.lib, build/amiga/pt4sum (checksum test program)
+VBCC    ?= /opt/vbcc
+VC      := PATH=$(VBCC)/bin:$$PATH VBCC=$(VBCC) $(VBCC)/bin/vc +aos68k
+CFLAGS  := -c99 -cpu=68000 -O2
+SRCS    := src/load.c src/replay.c src/voice.c src/api.c src/tables.c src/float.c
+OUT     := build/amiga
+OBJS    := $(SRCS:src/%.c=$(OUT)/%.o)
+
+all: $(OUT)/pt4.lib $(OUT)/pt4sum
+
+$(OUT)/%.o: src/%.c src/pt4_internal.h include/pt4.h
+	@mkdir -p $(OUT)
+	$(VC) $(CFLAGS) -c $< -o $@
+
+$(OUT)/pt4.lib: $(OBJS)
+	cat $(OBJS) > $@
+
+$(OUT)/pt4sum: test/pt4sum.c $(OUT)/pt4.lib
+	$(VC) $(CFLAGS) $< $(OUT)/pt4.lib -o $@
+
+clean:
+	rm -rf $(OUT)
+
+.PHONY: all clean

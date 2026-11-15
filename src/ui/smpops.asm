@@ -576,6 +576,7 @@ pt_0D03:
 	ADDQ.L	#1,D0
 	AND.L	#$00007fff,D0
 	MOVE.W	D0,(22,A5)
+	BSR.W	pt_SampleLengthValidate	;41 loop inside length
 	BSR.W	pt_DrawSampleHex
 	JSR	pt_RestorePalette
 	BRA.W	pt_RecordCheckInput
@@ -896,7 +897,7 @@ pt_0D3A:
 	TST.L	D1
 	BEQ.W	pt_0D43
 	MOVE.L	D1,D0
-	AND.L	#$00007fff,D0
+	JSR	pt_MixClamp41
 	MOVE.L	D0,dat_RecordBufPtr
 	MOVE.L	dat_DiskOpViewMode,D1
 	MOVEA.L	ABSEXECBASE.W,A6
@@ -912,7 +913,7 @@ pt_0D3A:
 	MOVE.L	(124,A2),D2
 	MOVEA.L	(A2),A2
 	MOVEA.L	(dat_RecordVar4,PC),A3
-	MOVE.L	(dat_RecordBufPtr,PC),D3
+	JSR	pt_MixSetup41
 	TST.W	D1
 	BEQ.S	pt_0D3B
 	SUBQ.W	#1,D1
@@ -945,14 +946,14 @@ pt_0D3F:
 	ADDQ.L	#1,A1
 	SUBQ.W	#1,D1
 	BNE.S	pt_0D40
-	SUBA.L	A1,A1
+	LEA	smp_Zero41,A1
 pt_0D40:
 	TST.W	D2
 	BEQ.S	pt_0D41
 	ADDQ.L	#1,A2
 	SUBQ.W	#1,D2
 	BNE.S	pt_0D41
-	SUBA.L	A2,A2
+	LEA	smp_Zero41,A2
 pt_0D41:
 	SUBQ.L	#1,D3
 	BGE.S	pt_0D3C
@@ -1366,6 +1367,7 @@ pt_0D7C:
 	MOVEA.L	D0,A3
 	MOVE.L	D0,D2
 	MOVE.L	D3,D5
+	SUBQ.L	#1,D3			;41 loop runs d3+1
 pt_0D7D:
 	MOVE.B	(A2)+,(A3)+
 	ADDQ.L	#1,A2
@@ -1481,6 +1483,7 @@ pt_0D88:
 	MOVE.L	#$00007fff,D0
 pt_0D89:
 	MOVE.W	D0,(28,A5)
+	BSR.W	pt_SampleLengthValidate	;41 loop inside length
 	BSR.W	pt_DrawSampleHex
 	JSR	pt_WaitMouseRelease
 	JSR	pt_RestorePalette
@@ -1764,8 +1767,7 @@ pt_0DBC:
 	MOVEA.L	dat_ModulePtr,A0
 	MOVEQ	#13,D0
 pt_0DBD:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0DBD
+	JSR	pt_SaveName41
 	BRA.S	pt_0DC0
 pt_0DBE:
 	MOVEA.L	dat_SampleEditorPtr,A0
@@ -1776,8 +1778,7 @@ pt_0DBE:
 	MOVEA.L	dat_ModulePtr,A0
 	MOVEQ	#19,D0
 pt_0DBF:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0DBF
+	JSR	pt_SaveName41
 pt_0DC0:
 	MOVE.L	#dat_FileNameBuf,dat_ScreenBufPtr
 	MOVEA.L	dat_ModulePtr,A0

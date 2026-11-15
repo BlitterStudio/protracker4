@@ -327,8 +327,9 @@ pt_DrawTempoDisplay:
 dat_TempoCounter:
 	DS.W	1
 pt_BtnSetupChannels:
-	BSR.W	pt_WaitMouseRelease
-	LEA	dat_12E1,A0
+	JSR	pt_TrkChanBtn41
+	NOP
+	NOP
 	BSR.W	pt_ShowYesNoDialog
 	BEQ.S	pt_0638
 	RTS
@@ -356,7 +357,8 @@ pt_063A:
 	BSET	#5,dat_ModeFlags
 	BSR.S	pt_ClearScreenBuf2
 pt_063B:
-	MOVE.W	#$0004,dat_RpNumChannels
+	JSR	pt_Trk4Mode41
+	NOP
 	MOVE.W	#$0100,D0
 	MULU	dat_RpNumChannels,D0
 	MOVE.W	D0,dat_RowDataVar
@@ -382,7 +384,8 @@ pt_063D:
 	CLR.W	dat_CursorColumn
 	BRA.W	pt_ReturnFromPlay
 pt_063E:
-	MOVE.W	#$0008,dat_RpNumChannels
+	JSR	pt_Trk8Mode41
+	NOP
 	MOVE.W	#$0100,D0
 	MULU	dat_RpNumChannels,D0
 	MOVE.W	D0,dat_RowDataVar
@@ -440,6 +443,9 @@ pt_0644:
 	MOVE.L	#$0003243c,dat_SampleEditCfg
 pt_0645:
 	MOVE.L	#$00000063,dat_SampleEditState
+	IFD	DEBUGAUTO
+	JSR	pt_MemProbe41
+	ENDC
 	MOVE.L	dat_SampleEditCfg,D0
 	MOVE.L	#$00010001,D1
 	MOVEA.L	ABSEXECBASE.W,A6
@@ -461,9 +467,9 @@ pt_0647:
 	JSR	(-198,A6)
 	MOVE.L	D0,dat_ModulePtr
 	BNE.S	pt_0648
-	JSR	pt_SetupPaletteMode
+	JSR	pt_ModNoMem41
 pt_0648:
-	JSR	pt_DrawSampleHex
+	JSR	pt_NewBlk41
 	RTS
 dat_DiskOpState:
 	DS.W	1
@@ -1439,7 +1445,7 @@ pt_06FE:
 	MOVE.L	A0,D2
 	MOVE.L	(4,A0),D3
 	ADDQ.L	#8,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	D7,D1
 	JSR	(-36,A6)
 	JSR	pt_PrefsSave41

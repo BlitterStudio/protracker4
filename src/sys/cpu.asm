@@ -133,7 +133,11 @@ pt_CpuAboutFill:
 	DBF	D2,.dig
 	; output path: col 52, 8 chars
 	LEA	.paula(PC),A1
-	TST.B	ahi_Active
+	TST.B	agus_On			;41 card output
+	BEQ.S	.na
+	LEA	.agus(PC),A1
+	BRA.S	.cp
+.na:	TST.B	ahi_Active
 	BEQ.S	.p
 	LEA	.ahi(PC),A1
 	BRA.S	.cp
@@ -151,6 +155,7 @@ pt_CpuAboutFill:
 .paula:	DC.B	"Paula   "
 .mix:	DC.B	"Paula 8 "
 .ahi:	DC.B	"AHI     "
+.agus:	DC.B	"AmiGUS  "
 	EVEN
 
 ; fill str_AboutMem: free chip kb / fast mb, 6 digits each
@@ -189,6 +194,7 @@ pt_MemAboutFill:
 
 ; about-box hook: refresh mem line on open
 pt_MemAboutHook:
+	JSR	pt_WscOff41		; wide level bars off the box rows
 	BSR.W	pt_MemAboutFill
 	BSR.W	pt_CpuAboutFill
 	LEA	SECSTRT_1,A0
@@ -203,6 +209,16 @@ pt_MemOnly64:
 	RTS
 mem_Only64:	DC.B	"ONLY 64 PATTERNS (MEMORY)",0
 	EVEN
+	IFD	DEBUGAUTO
+pt_MemProbe41:
+	MOVEM.L	D0-D1/A0-A1/A6,-(A7)
+	MOVEA.L	ABSEXECBASE.W,A6
+	MOVE.L	#$20002,D1		; MEMF_CHIP|MEMF_LARGEST
+	JSR	(-216,A6)		; AvailMem
+	MOVE.L	D0,mem_Largest
+	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
+	RTS
+	ENDC
 
 ; odd-address safe word fetch for author search, d1=word
 pt_AuthorWord41:

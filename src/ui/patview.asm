@@ -1,5 +1,5 @@
 pt_PatViewDrawAll:
-	TST.W	dat_RecordMode
+	JSR	pt_PatAll41
 	BNE.S	pt_PatViewDrawAll0
 	CLR.B	dat_KeyCode
 pt_PatViewDrawAll0:
@@ -7,7 +7,7 @@ pt_PatViewDrawAll0:
 	BEQ.S	pt_PatViewDrawAll1
 	RTS
 pt_PatViewDrawAll1:
-	JSR	pt_ClearDataRegs
+	JSR	pt_TrkSync41
 pt_PatViewDrawAll2:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	TST.B	dat_PatViewBusy
@@ -38,8 +38,8 @@ pt_PatViewDrawPattern:
 	SNE	D5
 	MOVEQ	#63,D6
 pt_PatViewRowLoop:
-	MOVE.W	dat_RpNumChannels,D7
-	SUBQ.W	#1,D7
+	JSR	pt_TrkCells41
+	NOP
 	MOVE.W	dat_1365,dat_DisplayParam
 	MOVEQ	#1,D1
 	BSR.W	pt_DrawTrackDecimal
@@ -52,7 +52,8 @@ pt_PatViewRowStart:
 pt_PatViewCellLoop:
 	BSR.S	pt_FormatNoteCell
 	DBF	D7,pt_PatViewCellLoop
-	ADDI.W	#$0233,dat_TextBytePos
+	JSR	pt_TrkRowEnd41
+	NOP
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_PatViewRowNext
 	ADDQ.W	#1,dat_TextBytePos
@@ -64,8 +65,7 @@ pt_PatViewDrawDone:
 	RTS
 pt_PatViewDrawCell:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
-	MOVEA.L	A0,A6
-	LEA	(dat_PeriodTable,PC),A2
+	JSR	pt_PatCell41
 	LEA	(dat_NoteCellText,PC),A3
 	LEA	(dat_HexPairTable,PC),A4
 	MOVEQ	#48,D4
@@ -94,7 +94,7 @@ pt_FormatNoteLoop:
 	BEQ.S	pt_FormatNoteName
 	ADDQ.L	#2,D0
 	DBF	D2,pt_FormatNoteLoop
-	MOVE.L	#$3f3f3f20,(A3)
+	JSR	pt_NoteNear41
 	BRA.S	pt_FormatNoteSampleFx
 pt_FormatNoteName:
 	LSL.L	#1,D0
@@ -375,7 +375,7 @@ pt_0F69:
 	BEQ.S	pt_0F6A
 	RTS
 pt_0F6A:
-	MOVE.W	(dat_CurrentSample,PC),dat_DisplayParam
+	JSR	pt_SmxShow		;17f7e: ;41 logical sample
 	MOVE.W	#$1c7a,dat_TextBytePos
 	BTST	#7,dat_ModeFlags
 	BNE.S	pt_0F6B
@@ -1178,16 +1178,12 @@ dat_FontMapSmall:
 	DC.L	$45000000
 	DS.L	7
 	DC.L	$00400000
-	DS.L	12
-	DC.L	$00006500
-	DS.L	1
-	DC.L	$67000064
-	DS.L	1
-	DC.L	$62000000
-	DS.L	3
-	DC.L	$00006100
-	DS.L	1
-	DC.L	$63000000
+	DC.B	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	;18a00 ;41 latin-1 letters
+	DC.B	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$21,$21,$21,$21
+	DC.B	$21,$21,$21,$23,$25,$25,$25,$25,$29,$29,$29,$29,$24,$2e,$2f,$2f
+	DC.B	$2f,$2f,$65,$38,$2f,$35,$35,$35,$67,$39,$30,$64,$47,$47,$47,$47
+	DC.B	$62,$47,$47,$49,$4b,$4b,$4b,$4b,$4f,$4f,$4f,$4f,$4a,$54,$55,$55
+	DC.B	$55,$55,$61,$00,$55,$5b,$5b,$5b,$63,$5f,$56,$5f
 dat_0FD4:
 	DS.L	8
 	DC.L	$00010203,$04050607,$08090a0b,$0c0d0e0f
@@ -1211,7 +1207,12 @@ dat_FontMapLarge:
 	DC.L	$45460000
 	DS.L	7
 	DC.L	$00400000
-	DS.L	23
+	DC.B	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00	;18c00 ;41 latin-1 letters
+	DC.B	$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$00,$21,$21,$21,$21
+	DC.B	$21,$21,$21,$23,$25,$25,$25,$25,$29,$29,$29,$29,$24,$2e,$2f,$2f
+	DC.B	$2f,$2f,$2f,$38,$2f,$35,$35,$35,$35,$39,$30,$33,$21,$21,$21,$21
+	DC.B	$21,$21,$21,$23,$25,$25,$25,$25,$29,$29,$29,$29,$24,$2e,$2f,$2f
+	DC.B	$2f,$2f,$2f,$00,$2f,$35,$35,$35,$35,$39,$30,$39
 pt_DrawSprite:
 	ADD.W	(dat_0FDA,PC),D1
 	ADD.W	D1,D2

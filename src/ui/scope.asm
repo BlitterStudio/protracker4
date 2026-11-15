@@ -142,7 +142,7 @@ pt_0134:
 	OR.W	(dat_ScopeCh2,PC),D0
 	LSL.B	#1,D0
 	OR.W	(dat_ScopeCh1,PC),D0
-	MOVE.W	D0,dat_RpDmaChanMask
+	JSR	pt_WideMask41
 	BSR.S	pt_UpdateScopeDisplay
 	BSR.S	pt_0135
 	JSR	pt_RefreshDisplay
@@ -550,6 +550,7 @@ pt_0179:
 	MULS	(20,A0),D0
 	ADD.L	#$00000020,D0
 	LSR.L	#6,D0
+	JSR	pt_SndHwVol41
 	TST.B	(n_pt4_chunked,A0)
 	BNE.S	pt_017A
 	MOVE.W	D0,(aud_VOL,A5)

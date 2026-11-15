@@ -6,8 +6,15 @@ pt_Vu8Tick41:
 	BTST	#5,dat_ModeFlags	; set = 4ch
 	BEQ.S	.m8
 .c4:	TST.B	vu8_On
-	BEQ.S	.r
+	BEQ.S	.w4
 	BSR.W	pt_Vu8Restore
+.w4:	TST.B	wide_On			; wide module: levels of the card
+	BEQ.S	.r
+	TST.B	dat_CursorPhase
+	BEQ.S	.r
+	BSR.W	pt_WideVu41
+	ORI	#4,CCR			; z=1: pt's 4 bars skipped
+	RTS
 .r:	TST.B	dat_CursorPhase
 	RTS
 .m8:	TST.B	mix68_Slow		; a500 mode: no spare irq time, old vu
@@ -20,13 +27,71 @@ pt_Vu8Tick41:
 	LEA	dat_ScopeCh1,A3
 	LEA	vu8_Dummy,A2
 	MOVEQ	#7,D7
-.v:	JSR	pt_r0284e		; height only, header goes to the dummy
-	LEA	n_SIZEOF(A1),A1
+.v:	TST.B	wide_On
+	BEQ.S	.o
+	MOVEQ	#7,D0
+	SUB.W	D7,D0
+	BSR.W	pt_WideVuH41
+	BRA.S	.n
+.o:	JSR	pt_r0284e		; height only, header goes to the dummy
+.n:	LEA	n_SIZEOF(A1),A1
 	LEA	10(A3),A3
 	DBF	D7,.v
 	BSR.W	pt_Vu8Draw
 	ADDQ.L	#4,A7			; leave pt_r027fc too
 	RTS
+
+; wide module, 4 track view: pt's 4 bars from the card levels
+pt_WideVu41:
+	LEA	chip_PanelBitplane1,A2
+	LEA	dat_ScopeCh1,A3
+	MOVEQ	#0,D3
+.l:	MOVE.W	D3,D0
+	BSR.S	pt_WideVuH41
+	JSR	pt_DrawScopeSprite
+	LEA	$d0(A2),A2
+	LEA	10(A3),A3
+	ADDQ.W	#1,D3
+	CMP.W	#4,D3
+	BLO.S	.l
+	RTS
+
+; view slot d0 -> bar height (4,a3) 1..48 from trk_Lev, as pt scales
+; the volume; muted or silent: rest
+pt_WideVuH41:
+	MOVEM.L	D0-D2/A0,-(A7)
+	MOVE.W	trk_Grp,D1
+	LSL.W	#2,D1
+	ADD.W	D1,D0			; channel
+	MOVEQ	#1,D1
+	TST.B	agus_On
+	BEQ.S	.s
+	CMP.W	wide_Ch,D0
+	BHS.S	.s
+	MOVE.L	wide_Mute,D2
+	BTST	D0,D2
+	BNE.S	.s
+	LEA	trk_Lev,A0
+	BSR.S	pt_LevH41
+.s:	MOVE.W	D1,(4,A3)
+	MOVEM.L	(A7)+,D0-D2/A0
+	RTS
+
+; level of channel d0 at (a0) -> d1 = height 1..48 (pt's vu scale)
+pt_LevH41:
+	MOVEQ	#0,D1
+	MOVE.B	(A0,D0.W),D1
+	CMP.W	#63,D1
+	BLS.S	.c
+	MOVEQ	#63,D1
+.c:	MULU	#48,D1
+	MULU	dat_RpMasterVol,D1
+	ADD.L	#32,D1
+	LSR.L	#6,D1
+	LSR.W	#6,D1
+	BNE.S	.r
+	MOVEQ	#1,D1
+.r:	RTS
 
 ; hook: pt_InitPalettes, instead of LEA chip_PanelBitplane1,A2
 pt_Vu8Init41:
@@ -48,15 +113,8 @@ pt_Vu8Restore:
 	MOVEM.L	D0-D1/A0-A1,-(A7)
 	SF	vu8_On
 	ST	dat_0658		; analyzer backdrop again
-	TST.B	vu8_Cop
-	BEQ.S	.o
-	SF	vu8_Cop
-	LEA	vu8_CopOrg,A0
-	LEA	dat_14AB,A1
-	MOVE.L	(A0)+,(A1)+
-	MOVE.L	(A0)+,(A1)+
-	MOVE.L	(A0)+,(A1)+
-.o:	LEA	chip_PanelBitplane1+4,A0
+	BSR.S	pt_Vu8Unhook
+	LEA	chip_PanelBitplane1+4,A0
 	MOVEQ	#4-1,D1
 .k:	MOVEQ	#48-1,D0
 	MOVEA.L	A0,A1
@@ -67,11 +125,34 @@ pt_Vu8Restore:
 	MOVEM.L	(A7)+,D0-D1/A0-A1
 	RTS
 
+; copper back to the plain list
+pt_Vu8Unhook:
+	TST.B	vu8_Cop
+	BEQ.S	.r
+	MOVEM.L	A0-A1,-(A7)
+	SF	vu8_Cop
+	LEA	vu8_CopOrg,A0
+	LEA	dat_14AB,A1
+	MOVE.L	(A0)+,(A1)+
+	MOVE.L	(A0)+,(A1)+
+	MOVE.L	(A0)+,(A1)+
+	MOVEM.L	(A7)+,A0-A1
+.r:	RTS
+
+; z=1: spr 4-7 show the vu (sampler: range and play bar sprites)
+pt_Vu8Own:
+	TST.W	dat_SamplerActive
+	BNE.S	.r
+	CMPI.L	#chip_PanelBitplane1,dat_BplPtr1
+.r:	RTS
+
 ; hook: end of pt_CheckDiskOpCont, instead of JSR pt_UpdatePaletteCopper
 pt_Vu8CopHook41:
 	JSR	pt_UpdatePaletteCopper
 	TST.B	vu8_On
 	BEQ.S	.r
+	BSR.S	pt_Vu8Own
+	BNE.S	.r
 	BSR.W	pt_Vu8CopBuild
 .r:	RTS
 
@@ -159,6 +240,8 @@ pt_Vu8CopBuild:
 
 ; state heights (4,A3) -> sprites 4-7, 2nd bar of each via copper
 pt_Vu8Draw:
+	BSR.W	pt_Vu8Own
+	BNE.W	pt_Vu8Unhook		; mux would move the sampler sprites
 	TST.B	vu8_Cop
 	BNE.S	.cp
 	BSR.W	pt_Vu8CopBuild
@@ -207,7 +290,8 @@ pt_Vu8Spr:
 .a:	CMP.W	#48,D4
 	BLS.S	.h
 	MOVEQ	#48,D4
-.h:	NEG.W	D3
+.h:	BSR.W	pt_Vu8Hide
+	NEG.W	D3
 	ADD.W	#48,D3			; first row with bar
 	NEG.W	D4
 	ADD.W	#48,D4
@@ -283,15 +367,37 @@ pt_Vu8Spr:
 	EXG	D0,D1
 .o:	RTS
 
+; hidden tracks: no bar (d3 ch k, d4 ch k+4, d7 = 3-k)
+pt_Vu8Hide:
+	MOVEM.L	D0-D1,-(A7)
+	JSR	pt_TrkN41
+	MOVEQ	#3,D1
+	SUB.W	D7,D1
+	CMP.W	D0,D1
+	BLO.S	.a
+	MOVEQ	#0,D3
+.a:	ADDQ.W	#4,D1
+	CMP.W	D0,D1
+	BLO.S	.r
+	MOVEQ	#0,D4
+.r:	MOVEM.L	(A7)+,D0-D1
+	RTS
+
 ;--- scopes: box = 2 ch of 20 px, wide box = 4 ch of 22 px
 ; from pt_ScopeBase, replaces pt_ScopeTrackPos
 pt_Scope8:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	LEA	dat_Channel1,A0
 	LEA	vu8_Pos,A2
+	MOVEQ	#8-1,D6
+	BSR.W	pt_Vu8Track
+	LEA	dat_ScopeDisplayBuf,A3
+	BRA.W	pt_Scope8Src
+
+; a0=1st ch a2=pos table (20 bytes per ch) d6=ch-1: scope pos per ch
+pt_Vu8Track:
 	LEA	dat_ScopeSampleTab,A1
 	LEA	dat_ScopeDisplayBuf,A3
-	MOVEQ	#8-1,D6
 .ch:	MOVE.W	(A0),D0
 	AND.W	#$0fff,D0
 	OR.W	(16,A0),D0
@@ -342,7 +448,10 @@ pt_Scope8:
 .nx:	LEA	20(A2),A2
 	LEA	n_SIZEOF(A0),A0
 	DBF	D6,.ch
+	RTS
+
 ;--- src ptr and scale per ch
+pt_Scope8Src:
 	LEA	vu8_Pos,A2
 	LEA	vu8_Src,A4
 	LEA	dat_ScopeCh1,A5
@@ -369,8 +478,13 @@ pt_Scope8:
 	LEA	20(A2),A2
 	LEA	10(A5),A5
 	DBF	D6,.s
+	TST.W	dat_SamplerActive
+	BEQ.S	.dr
+	LEA	vu8_Pos,A2
+	MOVEQ	#8,D5
+	BSR.W	pt_Vu8SmpBar
 ;--- draw
-	TST.B	dat_ScopeBufferRef
+.dr:	TST.B	dat_ScopeBufferRef
 	BEQ.W	.out
 	ADDQ.B	#1,vu8_Frame		; irq load: plot at half rate
 	BTST	#0,vu8_Frame
@@ -383,7 +497,9 @@ pt_Scope8:
 	CMPI.B	#2,dat_CursorPhase
 	BNE.W	.out
 	BRA.W	.pk
-.main:	JSR	pt_0114			; backdrop on mode change
+.main:	BSR.W	pt_StageLogo41		; rtg stage on screen: logo here
+	BNE.W	.pk
+	JSR	pt_0114			; backdrop on mode change
 	MOVE.B	dat_ScopeMode,D0
 	BNE.S	.m1
 	BSR.W	pt_Vu8ClrAll
@@ -473,8 +589,93 @@ pt_Scope8:
 .out:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 
+; sampler, wide module on the card: play bar over all its channels
+pt_WideSmpBar41:
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	MOVE.L	agus_Mem,D0
+	BEQ.S	.r
+	ADD.L	#AGM_CHAN,D0
+	MOVEA.L	D0,A0
+	LEA	wsb_Pos,A2
+	MOVE.W	wide_Ch,D6
+	SUBQ.W	#1,D6
+	BMI.S	.r
+	BSR.W	pt_Vu8Track
+	LEA	wsb_Pos,A2
+	MOVE.W	wide_Ch,D5
+	BSR.S	pt_Vu8SmpBar
+.r:	MOVEM.L	(A7)+,D0-D7/A0-A6
+	RTS
+
+; sampler: play bar of one ch inside the shown part, last one first
+; a2=pos table d5=ch count (8 ch: mute flags of the scopes)
+pt_Vu8SmpBar:
+	MOVEM.L	D0-D4/A0,-(A7)
+	MOVE.L	dat_DiskBufLen,D3
+	BEQ.S	.off
+	MOVEQ	#0,D4
+	MOVE.B	vu8_BarCh,D4
+	BSR.S	.in
+	BCS.S	.on
+	MOVEQ	#0,D4
+.l:	BSR.S	.in
+	BCS.S	.on
+	ADDQ.W	#1,D4
+	CMP.W	D5,D4
+	BCS.S	.l
+.off:	MOVEQ	#0,D0
+	MOVE.W	#$010e,D1
+	BRA.S	.spr
+.on:	MOVE.B	D4,vu8_BarCh
+.sh:	CMP.L	#$ffff,D3		; mulu/divu: 16 bit len
+	BLS.S	.x
+	LSR.L	#1,D3
+	LSR.L	#1,D1
+	BRA.S	.sh
+.x:	MULU.W	#$013a,D1
+	DIVU.W	D3,D1
+	MOVEQ	#0,D0
+	MOVE.W	D1,D0
+	ADDQ.W	#6,D0
+	MOVE.W	#$008b,D1
+.spr:	MOVEQ	#64,D2
+	LEA	chip_BorderRight,A0
+	JSR	pt_DrawSprite
+	MOVEM.L	(A7)+,D0-D4/A0
+	RTS
+; d4=ch -> c=1 and d1=ofs if it plays inside the shown part
+.in:	CMP.W	D5,D4
+	BCC.S	.no
+	MOVE.W	D4,D0
+	MULU	#10,D0
+	CMP.W	#8,D5
+	BNE.S	.nm
+	LEA	dat_ScopeCh1,A0
+	TST.W	(A0,D0.W)		; muted
+	BEQ.S	.no
+.nm:	ADD.W	D0,D0
+	MOVE.L	(A2,D0.W),D1
+	MOVE.L	dat_ScopeDisplay1,D0
+	CMP.L	D0,D1
+	BLS.S	.no
+	CMP.L	dat_ScopeDisplay2,D1
+	BCC.S	.no
+	SUB.L	D0,D1
+	ORI.B	#1,CCR
+	RTS
+.no:	ANDI.B	#$fe,CCR
+	RTS
+
 ; d0=ch d1=x d2=n a1=box centre a2=stride a6=style
 pt_Vu8Seg:
+	MOVEM.L	D0-D1,-(A7)
+	MOVE.W	D0,D1
+	JSR	pt_TrkN41
+	CMP.W	D0,D1
+	BCS.S	.sh1
+	MOVEM.L	(A7)+,D0-D1
+	RTS
+.sh1:	MOVEM.L	(A7)+,D0-D1
 	MOVEM.L	D0-D7/A0-A5,-(A7)
 	MOVE.W	D0,D3
 	LSL.W	#3,D3
@@ -557,12 +758,10 @@ pt_Vu8Conn:
 ; bar bytes between the plot halves = copy of the gap between two boxes
 pt_Vu8Steg:
 	MOVEM.L	D0-D3/A0-A3,-(A7)
-	MOVE.B	#1,vu8_Steg
 	MOVEQ	#46,D0
 	LEA	.n(PC),A3
 	CMPI.B	#4,dat_ScopeMode
 	BCS.S	.s
-	MOVE.B	#2,vu8_Steg
 	MOVEQ	#52,D0
 	LEA	.w(PC),A3
 .s:	LEA	SECSTRT_2+5*80,A0
@@ -584,32 +783,6 @@ pt_Vu8Steg:
 .n:	DC.B	43,49,55,61,-1
 .w:	DC.B	43,46,49,55,58,61,-1
 	EVEN
-
-; back to the 4 box backdrop (sampler): bar bytes = left neighbour
-pt_Vu8StegOff:
-	TST.B	vu8_Steg
-	BEQ.S	.r
-	MOVEM.L	D0-D2/A0-A3,-(A7)
-	LEA	pt_Vu8Steg\.n(PC),A3
-	CMPI.B	#2,vu8_Steg
-	BNE.S	.s
-	LEA	pt_Vu8Steg\.w(PC),A3
-.s:	SF	vu8_Steg
-	LEA	SECSTRT_2+5*80,A0
-	MOVEQ	#2-1,D2
-.p:	MOVEQ	#35-1,D1
-.r2:	MOVEA.L	A3,A1
-.b:	MOVEQ	#0,D0
-	MOVE.B	(A1)+,D0
-	BMI.S	.nx
-	MOVE.B	-1(A0,D0.W),(A0,D0.W)
-	BRA.S	.b
-.nx:	LEA	80(A0),A0
-	DBF	D1,.r2
-	LEA	chip_ScreenBitplanes+5*80,A0
-	DBF	D2,.p
-	MOVEM.L	(A7)+,D0-D2/A0-A3
-.r:	RTS
 
 pt_Vu8ClrAll:
 	MOVEM.L	D0-D3/A0-A1,-(A7)
@@ -637,4 +810,291 @@ pt_Vu8Clr:
 	DBF	D2,.b
 	LEA	80(A0),A0
 	DBF	D1,.r
+	RTS
+
+;--- panel box with the rtg stage on screen (wide window): logo, z=0
+pt_StageLogo41:
+	TST.B	rtg_Wide
+	BEQ.S	.n
+	TST.L	rwd_Mem
+	BEQ.S	.n
+	TST.B	rwd_On
+	BEQ.S	.n
+	CMPI.B	#$fe,dat_0658
+	BEQ.S	.y
+	MOVE.B	#$fe,dat_0658		; no mode: pt_0114 draws the user's again
+	MOVEM.L	D0-D1/A0-A1,-(A7)
+	BSR.W	pt_Vu8ClrAll		; traces off plane 2
+	BSR.S	pt_WideLogo41
+	MOVEM.L	(A7)+,D0-D1/A0-A1
+.y:	ANDI	#$fb,CCR
+	RTS
+.n:	ORI	#4,CCR
+	RTS
+
+pt_WideLogo41:
+	MOVEM.L	D0/A0,-(A7)
+	MOVEA.L	#dat_CreditsLogo41,A0
+	JMP	pt_ScopeBackdrop41	; pops d0/a0
+
+;--- wide module, panel box: logo with the stage, else a level bar per
+; channel in the scope boxes (plane 2, scope colour)
+pt_WideScope41:
+	TST.B	dat_ScopeBufferRef
+	BEQ.W	.r
+	MOVEM.L	D0-D7/A0-A3,-(A7)
+	ST	wsc_Busy
+	BSR.W	pt_StageLogo41
+	BEQ.S	.nat
+	MOVE.B	#1,wsc_State
+	BRA.S	.x
+.nat:	MOVEQ	#3,D0			; mode 0: scopes off, pt's logo
+	TST.B	dat_ScopeMode
+	BEQ.S	.k
+	MOVEQ	#2,D0			; levels: one block
+.k:	MOVE.B	wide_Ch+1,D1
+	CMP.B	wsc_State,D0
+	BNE.S	.nk
+	CMP.B	wsc_Ch,D1
+	BEQ.S	.go
+.nk:	MOVE.B	D0,wsc_State
+	MOVE.B	D1,wsc_Ch
+	ST	dat_0658		; backdrop and bars again
+.go:	MOVE.B	dat_ScopeMode,D1
+	CMP.B	dat_0658,D1
+	BEQ.S	.b
+	TST.L	dat_AllocBufPtr		; task unpacks a backdrop: next frame
+	BNE.W	.x
+	BSR.W	pt_Vu8ClrAll
+	BSR.W	pt_WscGeom41
+	JSR	pt_0114
+.b:	CMP.B	#3,D0
+	BEQ.S	.x
+	TST.L	dat_AllocBufPtr
+	BNE.S	.x
+	BSR.S	pt_WscBlk41
+	BSR.W	pt_WscBars41
+.x:	SF	wsc_Busy
+	MOVEM.L	(A7)+,D0-D7/A0-A3
+.r:	RTS
+
+; replayer tick (card): changed bars right away, the scope irq only
+; lays the box out; not while it draws
+pt_WscTick41:
+	CMPI.B	#2,wsc_State
+	BNE.S	.r
+	TST.B	wsc_Busy
+	BNE.S	.r
+	TST.B	dat_ScopeBufferRef
+	BEQ.S	.r
+	CMPI.W	#1,dat_UIMode
+	BEQ.S	.m
+	CMPI.W	#9,dat_UIMode
+	BNE.S	.r
+.m:	TST.L	dat_AllocBufPtr
+	BNE.S	.r
+	MOVEM.L	D0-D7/A0-A3,-(A7)
+	MOVE.B	dat_ScopeMode,D0
+	CMP.B	dat_0658,D0		; box laid out
+	BNE.S	.x
+	BSR.W	pt_WscBars41
+.x:	MOVEM.L	(A7)+,D0-D7/A0-A3
+.r:	RTS
+
+; box backdrop -> one block: the gaps between the boxes go (planes 0,
+; 1; the backdrop may come from the task, so checked every frame)
+pt_WscBlk41:
+	LEA	SECSTRT_2+20*80+46,A0
+	LEA	chip_ScreenBitplanes+20*80+46,A1
+	MOVE.B	(A0),D1
+	OR.B	(A1),D1
+	OR.B	6(A0),D1		; two boxes: the gap in the middle
+	OR.B	6(A1),D1
+	BEQ.S	.r
+	LEA	-15*80(A0),A0		; top edge
+	LEA	-15*80(A1),A1
+	MOVEQ	#3-1,D1
+.g:	MOVEM.L	A0-A1,-(A7)
+	ST	(A0)
+	ST	(A1)
+	MOVEQ	#33-1,D2
+.l:	LEA	80(A0),A0
+	LEA	80(A1),A1
+	CLR.B	(A0)
+	CLR.B	(A1)
+	DBF	D2,.l
+	ST	80(A0)			; bottom edge: light
+	CLR.B	80(A1)
+	MOVEM.L	(A7)+,A0-A1
+	ADDQ.L	#6,A0
+	ADDQ.L	#6,A1
+	DBF	D1,.g
+.r:	RTS
+
+; help title rows 0-11 have no plane 2: scope traces there go
+pt_HelpTop41:
+	MOVEM.L	D0/A0,-(A7)
+	MOVEA.L	dat_ScreenBuf2Ptr,A0
+	MOVE.W	#12*80/4-1,D0
+.c:	CLR.L	(A0)+
+	DBF	D0,.c
+	MOVEM.L	(A7)+,D0/A0
+	RTS
+
+; another page takes the screen (help, about): the bars go now, the
+; page clears only below them; laid out again on return
+pt_WscOff41:
+	CMPI.B	#2,wsc_State
+	BNE.S	.r
+	MOVEM.L	D0-D7/A0-A3,-(A7)
+	MOVEA.L	dat_ScreenBuf2Ptr,A2
+	LEA	6*80+40(A2),A2
+	LEA	wsc_Prv,A1
+	MOVEQ	#0,D7
+	BRA.S	.e
+.c:	MOVEQ	#0,D3
+	MOVE.B	(A1,D7.W),D3
+	BEQ.S	.n
+	CLR.B	(A1,D7.W)
+	MOVEQ	#0,D2
+	BSR.W	pt_WscBar41
+.n:	ADDQ.W	#1,D7
+.e:	MOVEQ	#0,D0
+	MOVE.B	wsc_Ch,D0
+	CMP.W	D0,D7
+	BLO.S	.c
+	SF	wsc_State
+	MOVEM.L	(A7)+,D0-D7/A0-A3
+.r:	RTS
+
+pt_WideScopeEnd41:
+	SF	wsc_State
+	BSR.W	pt_Vu8ClrAll
+	ST	dat_0658
+	RTS
+
+; bar geometry: one block x 328-511, none drawn
+pt_WscGeom41:
+	MOVEM.L	D0-D2/A0,-(A7)
+	LEA	wsc_Prv,A0
+	MOVEQ	#32-1,D1
+.c:	CLR.B	(A0)+
+	DBF	D1,.c
+	MOVEQ	#1,D1			; boxes
+	MOVE.W	#184,D2			; px a box
+	CLR.W	wsc_BP
+	MOVEQ	#0,D0
+	MOVE.W	wide_Ch,D0
+	ADD.W	D1,D0
+	SUBQ.W	#1,D0
+	DIVU	D1,D0			; channels a box
+	TST.W	D0
+	BNE.S	.p
+	MOVEQ	#1,D0
+.p:	MOVE.W	D0,wsc_N
+	MOVEQ	#0,D1
+	MOVE.W	D2,D1
+	DIVU	D0,D1			; pitch
+	MOVE.W	D1,wsc_P
+	MULU	D1,D0
+	SUB.W	D0,D2
+	LSR.W	#1,D2
+	MOVE.W	D2,wsc_Pad
+	MOVEM.L	(A7)+,D0-D2/A0
+	RTS
+
+; changed bars only (heights 0..33 from trk_Lev)
+pt_WscBars41:
+	MOVEA.L	dat_ScreenBuf2Ptr,A2
+	LEA	6*80+40(A2),A2		; x 320, first bar row
+	LEA	trk_Lev,A3
+	LEA	wsc_Prv,A1
+	MOVEQ	#0,D7
+	BRA.S	.e
+.c:	MOVEQ	#0,D2
+	TST.B	agus_On
+	BEQ.S	.z
+	MOVE.B	(A3,D7.W),D2
+	MULU	#33,D2
+	LSR.W	#6,D2
+.z:	MOVEQ	#0,D3
+	MOVE.B	(A1,D7.W),D3
+	CMP.W	D3,D2
+	BEQ.S	.n
+	MOVE.B	D2,(A1,D7.W)
+	BSR.S	pt_WscBar41
+.n:	ADDQ.W	#1,D7
+.e:	MOVEQ	#0,D0
+	MOVE.B	wsc_Ch,D0		; channels the bars are laid out for
+	CMP.W	D0,D7
+	BLO.S	.c
+	RTS
+
+; bar of ch d7 from height d3 to d2, a2 = box top left
+pt_WscBar41:
+	MOVEM.L	D0-D7/A0-A1,-(A7)
+	MOVEQ	#0,D0
+	MOVE.W	D7,D0
+	DIVU	wsc_N,D0		; box, slot in the high word
+	MOVE.W	D0,D1
+	MULU	wsc_BP,D1
+	SWAP	D0
+	MULU	wsc_P,D0
+	ADD.W	D0,D1
+	ADD.W	wsc_Pad,D1
+	ADDQ.W	#8,D1			; first px from x 320
+	MOVE.W	D1,D4
+	ADD.W	wsc_P,D4
+	SUBQ.W	#2,D4			; last px, 1 px gap
+	MOVE.W	D1,D0
+	AND.W	#7,D0
+	MOVEQ	#-1,D5
+	LSR.B	D0,D5			; first byte mask
+	MOVE.W	D4,D0
+	AND.W	#7,D0
+	EOR.W	#7,D0
+	MOVEQ	#-1,D6
+	LSL.B	D0,D6			; last byte mask
+	LSR.W	#3,D1
+	LSR.W	#3,D4
+	MOVEQ	#33,D0
+	MOVE.W	D2,D7
+	SUB.W	D3,D7
+	BPL.S	.up
+	NEG.W	D7
+	SUB.W	D3,D0			; fall: rows 33-old .. 32-new off
+	MOVEQ	#0,D3
+	BRA.S	.ro
+.up:	SUB.W	D2,D0			; rise: rows 33-new .. 32-old on
+	MOVEQ	#-1,D3
+.ro:	MULU	#80,D0
+	LEA	(A2,D0.W),A0
+	ADDA.W	D1,A0
+	SUB.W	D1,D4			; bytes after the first
+	SUBQ.W	#1,D7
+.y:	MOVEA.L	A0,A1
+	MOVE.B	D5,D0
+	TST.W	D4
+	BNE.S	.f
+	AND.B	D6,D0			; bar inside one byte
+.f:	BSR.S	.px
+	MOVE.W	D4,D1
+	SUBQ.W	#2,D1
+	BMI.S	.l
+.m:	MOVE.B	D3,(A1)+		; full bytes
+	DBF	D1,.m
+.l:	TST.W	D4
+	BEQ.S	.nr
+	MOVE.B	D6,D0
+	BSR.S	.px
+.nr:	LEA	80(A0),A0
+	DBF	D7,.y
+	MOVEM.L	(A7)+,D0-D7/A0-A1
+	RTS
+.px:	TST.B	D3
+	BEQ.S	.pc
+	OR.B	D0,(A1)+
+	RTS
+.pc:	NOT.B	D0
+	AND.B	D0,(A1)+
 	RTS

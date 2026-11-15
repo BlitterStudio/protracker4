@@ -1,3 +1,4 @@
+; dual licence: pt terms or MIT, see LICENSE
 ; 8ch on 68000: 6 voices mixed, v1/2 direct
 ; p0=v1 (l) p1=v2 (r) direct, p2=v3+6+7 (r) p3=v4+5+8 (l) mixed
 ; third vol tab (3x42 fits byte), v1/2 get 1/3 via n_pt4_volscale
@@ -9,7 +10,7 @@ MIX68_MINBENCH	EQU	1600			; min pt_CpuBench (a500+ = 640)
 	IFND	MIX68_RATE
 MIX68_RATE	EQU	6928			; period 512
 	ENDC
-; a500 mode: fast ram, 5 khz, no scopes, lead 6 (pt_MixLeadSpt)
+; a500 mode: fast ram, 5 khz, no scopes, lead 8 (pt_MixLeadSpt)
 MIX68_SLOWBENCH	EQU	560			; min bench for a500 mode
 MIX68_SLOWFAST	EQU	131072			; min fast ram
 MIX68_SLOWRATE	EQU	5000
@@ -63,6 +64,8 @@ pt_Mix68Init:
 ; task ctx: 8ch -> alloc tab + rings ch2/3 (chip), else free
 pt_Mix68Mem:
 	MOVEM.L	D0-D3/A0-A1/A6,-(A7)
+	TST.B	agus_On			; card output: no ring
+	BNE.W	.free
 	CMPI.W	#8,dat_RpNumChannels
 	BNE.W	.free
 	TST.L	mix_Ring
@@ -220,6 +223,8 @@ pt_Mix68VolScale:
 	MOVE.W	dat_RpMasterVol,D1
 	TST.B	mix_Active
 	BEQ.S	.full
+	TST.B	agus_On			; card output: full volume
+	BNE.S	.full
 	MULU	#21,D1
 	LSR.W	#6,D1			; ~1/3
 .full:	LEA	dat_Channel1,A0
@@ -257,7 +262,7 @@ pt_Mix68TickSoft:
 	MOVEQ	#1,D7			; max 2 ticks per call, 68000 must never run behind
 	TST.B	mix68_Slow		; a500 mode: more catch-up
 	BEQ.S	.again
-	MOVEQ	#5,D7
+	MOVEQ	#7,D7
 .again:	TST.W	mix_TicksDue		; else loop never ends, tasks starve
 	BEQ.S	.done
 	SUBQ.W	#1,mix_TicksDue
@@ -952,7 +957,10 @@ pt_Mix68UpdateVoice:
 	ADD.W	D1,D1
 	MOVE.L	(A0,D1.W),(mv_step,A5)
 	RTS
-.calc:	MOVE.L	#PAULA_CLOCK,D0
+.calc:	CMP.W	#MIX_MINPER,D1		; higher pitch: no step overflow
+	BCC.S	.pmin
+	MOVEQ	#MIX_MINPER,D1
+.pmin:	MOVE.L	#PAULA_CLOCK,D0
 	BSR.W	pt_MixDiv32		; voice rate (68000: soft div)
 	LSL.L	#8,D0
 	LSL.L	#8,D0
@@ -999,7 +1007,7 @@ M68D_REPLEN	EQU	12		; words
 M68D_PER	EQU	14
 M68D_VOL	EQU	16
 M68D_SIZE	EQU	20
-M68D_SLOTS	EQU	8		; pow2 > lead
+M68D_SLOTS	EQU	16		; pow2 > lead + 1
 
 ; from pt_MixStart (68000): v1/2 -> shadow regs, paula 0/1 off, clear buf
 pt_Mix68DirectInit:
@@ -1028,7 +1036,7 @@ pt_Mix68DirectInit:
 	MOVE.W	#MIX_LEAD,mix68_DLead	; lead as pt_MixLeadSpt
 	TST.B	mix68_Slow
 	BEQ.S	.ld
-	MOVE.W	#3*MIX_LEAD,mix68_DLead
+	MOVE.W	#4*MIX_LEAD,mix68_DLead
 .ld:
 	ST	mix68_DOn
 	TST.B	ahi_NoPaula
@@ -1107,7 +1115,9 @@ pt_Mix68DirectTick:
 	CMP.W	#2,D0
 	BCS.S	.vol
 	MOVE.W	D0,(aud_PER,A1)
-.vol:	MOVE.W	(M68D_VOL,A0),(aud_VOL,A1)
+.vol:	MOVE.W	(M68D_VOL,A0),D0
+	JSR	pt_SndHwVol41
+	MOVE.W	D0,(aud_VOL,A1)
 .nx:	ADDQ.W	#1,D4
 	CMP.W	#2,D4
 	BNE.W	.v

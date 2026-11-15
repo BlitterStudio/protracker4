@@ -324,7 +324,7 @@ pt_MixItWrite:
 	MOVE.L	D4,D1
 	MOVE.L	mixit_Buf,D2
 	MOVE.L	D6,D3
-	JSR	(-48,A6)		; Write
+	JSR	pt_Write41		; checked write
 	MOVE.L	D4,D1
 	JSR	(-36,A6)		; Close
 .r:	MOVEM.L	(A7)+,D0-D4/A0-A1/A6

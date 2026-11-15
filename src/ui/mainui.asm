@@ -374,7 +374,8 @@ pt_SetupEditScreen:
 	MOVEM.L	D1-D7/A0-A6,-(A7)
 	MOVE.L	A0,-(A7)
 	BSR.W	pt_CheckEditMode3
-	MOVE.W	#$ffff,dat_DiskOpFlag
+	JSR	pt_NoteOpen41
+	NOP
 	BSR.W	pt_CopyPatternBlock
 	MOVEA.L	(A7)+,A0
 	LEA	dat_146B,A1
@@ -384,9 +385,9 @@ pt_SetupEditScreen:
 pt_DisplayUpdateLoop:
 	BSR.W	pt_ScreenDragUpdate
 	BSR.W	pt_GetKeypress
-	CMPI.W	#$0044,dat_KeyCode
+	CMPI.B	#$44,dat_KeyCode
 	BEQ.S	pt_ClearDiskOps
-	CMPI.W	#$0045,dat_KeyCode
+	CMPI.B	#$45,dat_KeyCode
 	BEQ.S	pt_ClearDiskOps
 	LMB
 	BNE.S	pt_DisplayUpdateLoop
@@ -400,7 +401,7 @@ pt_DisplayUpdateLoop:
 	BRA.S	pt_DisplayUpdateLoop
 pt_ClearDiskOps:
 	BSR.W	pt_CopyScreenBufs
-	CLR.W	dat_DiskOpFlag
+	JSR	pt_NoteDone41
 	MOVEM.L	(A7)+,D1-D7/A0-A6
 	RTS
 pt_SetupDisplayMode:
@@ -824,7 +825,7 @@ pt_036C:
 	BEQ.S	pt_0370
 	BRA.S	pt_0373
 pt_036D:
-	MOVE.W	D1,dat_CurrentSample
+	JSR	pt_SmxSelD1		;05cd0: ;41 samples 32-63
 pt_036E:
 	CLR.B	dat_KeyCode
 	CLR.L	dat_AudioCtrlVar
@@ -849,7 +850,7 @@ pt_0373:
 	TST.B	dat_SampleKeyState
 	BEQ.S	pt_036D
 	CLR.B	dat_KeyCode
-	MOVE.W	D1,dat_CurrentSample
+	JSR	pt_SmxSelD1		;05d3c: ;41 samples 32-63
 	JSR	pt_DrawSampleHex
 	MOVE.W	dat_CurrentSample,D0
 	ADD.W	D0,D0
@@ -1208,15 +1209,15 @@ pt_03A2:
 	LEA	dat_12E4,A0
 	BSR.W	pt_ShowYesNoDialog
 	BNE.W	pt_SetPaletteEdit
-	MOVE.W	dat_CurrentSample,dat_PatternKeyVar
+	JSR	pt_SmxAllBeg		;06234: ;41 samples 32-63 too
 	MOVE.W	#$0001,dat_CurrentSample
 pt_03A3:
 	JSR	pt_DrawSampleHex
 	BSR.W	pt_SampleEditorBranch
 	ADDQ.W	#1,dat_CurrentSample
-	CMPI.W	#$0020,dat_CurrentSample
+	JSR	pt_SmxAllNext		;06256: ;41
 	BCS.S	pt_03A3
-	MOVE.W	dat_PatternKeyVar,dat_CurrentSample
+	JSR	pt_SmxAllEnd		;06260: ;41
 	JMP	pt_DrawSampleHex
 pt_03A4:
 	MOVEM.W	dat_SavedEditDigit,D0-D1
@@ -1602,12 +1603,13 @@ dat_CopyControlData:
 	DS.W	1
 pt_03EF:
 	CLR.B	dat_KeyCode
+	JSR	pt_TrkTab		;41 track view: groups
 	TSTPC.W	dat_KeyQual1
 	BNE.S	pt_03F1
 	MOVE.W	dat_CursorColumn,D0
 	DIVU	#$0006,D0
 	ADDQ.W	#1,D0
-	CMP.W	dat_RpNumChannels,D0
+	JSR	pt_TrkCmpN41
 	BNE.S	pt_CalculateCursor
 	MOVEQ	#0,D0
 pt_CalculateCursor:
@@ -1620,8 +1622,8 @@ pt_03F1:
 	DIVU	#$0006,D0
 	SUBQ.W	#1,D0
 	BPL.S	pt_CalculateCursor
-	MOVE.W	dat_RpNumChannels,D0
-	SUBQ.W	#1,D0
+	JSR	pt_TrkLast41
+	NOP
 	BRA.S	pt_CalculateCursor
 pt_ClearInputState:
 	CLR.B	dat_KeyCode
@@ -1879,7 +1881,8 @@ pt_SaveEditState:
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 pt_InputHelp:
-	MOVEM.W	dat_SavedEditDigit,D0-D1
+	JSR	pt_HelpIn41
+	NOP
 	LEA	dat_1439,A0
 	BSR.W	pt_HandleUIButton
 	TST.W	D2
@@ -2171,7 +2174,7 @@ dat_StopRequest:
 	DS.W	1
 pt_0441:
 	MOVEQ	#0,D0
-	MOVE.W	dat_CursorColumn,D0
+	JSR	pt_FkeyCol41
 	DIVU	#$0006,D0
 	AND.L	#$00000007,D0
 	BTST	#5,dat_ModeFlags
@@ -2343,7 +2346,7 @@ pt_PatternInputProcess:
 	BSR.W	pt_PatViewSetRow
 	JMP	pt_PatViewDrawAll
 pt_MovePatternRow:
-	MOVE.W	dat_PatternPosition,D1
+	JMP	pt_InsRow41
 	LSL.W	#4,D1
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_045A
@@ -2372,7 +2375,7 @@ pt_045D:
 	BSR.S	pt_045E
 	BRA.S	pt_PatternInputProcess
 pt_045E:
-	MOVE.W	dat_PatternPosition,D1
+	JMP	pt_InsFx41
 	LSL.W	#4,D1
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_045F

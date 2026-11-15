@@ -44,6 +44,7 @@ pt_DivU32_Skip:
 ;  KEY n [q] | KEYN n code | TYPE text      q: 1 shift 2 alt 4 ctrl 8 amiga
 ;  WAITFRAMES n | WAIT n | WAITSTOP | SHOT name | DUMP h off len name
 ;  POKE h off val | HW | INEV class code qual x y | NOHOST | LOG text
+;  HOSTPTR (pointer from the host mouse again)
 ;  END | QUIT
 ; each line logged as OK/ERR
 dbg_LMB:
@@ -154,7 +155,15 @@ dbg_AutoBtnChk:
 dbg_AutoNoBtnWait:
 	TST.B	dbg_AutoKeyRel		; rawcode | $80
 	BEQ.S	dbg_AutoNoKey
-	MOVE.B	dbg_AutoKeyRel,D0
+	MOVE.W	dbg_AutoKeyEnd,D0
+	BEQ.S	.rel
+	TST.W	dat_KeyRepeatState
+	BNE.S	.got
+	MOVE.W	dbg_TickCnt,D1
+	SUB.W	D0,D1
+	BMI.W	dbg_AutoExit
+.got:	CLR.W	dbg_AutoKeyEnd
+.rel:	MOVE.B	dbg_AutoKeyRel,D0
 	CLR.B	dbg_AutoKeyRel
 	BSR.W	dbg_AutoPutKey
 	TST.B	dbg_AutoKeyQual
@@ -313,7 +322,18 @@ dbg_AutoKdNoAmiga:
 	MOVE.B	D0,D1
 	OR.B	#$80,D1
 	MOVE.B	D1,dbg_AutoKeyRel
-	BSR.W	dbg_AutoPutKey
+	CLR.W	dbg_AutoKeyEnd
+	MOVE.B	D0,D1
+	SUB.B	#$4c,D1
+	CMP.B	#3,D1
+	BHI.S	.put
+	CLR.W	dat_KeyRepeatState	; cursor keys: vbl reads them, release once pt took it
+	MOVE.W	dbg_TickCnt,D1
+	ADDQ.W	#5,D1			; or after 5 ticks (pt repeats from 6)
+	BNE.S	.end
+	ADDQ.W	#1,D1
+.end:	MOVE.W	D1,dbg_AutoKeyEnd
+.put:	BSR.W	dbg_AutoPutKey
 	MOVE.W	#2,dbg_AutoWait
 	RTS
 dbg_CmdKeyN:				; KEYN n code
@@ -367,8 +387,8 @@ dbg_AutoTypeStep:			; Z=1 at end of text
 dbg_AutoTypeMap:
 	AND.W	#$7f,D0
 	LEA	dbg_AsciiRaw,A0
-	MOVE.B	(0,A0,D0.W),D1
 	MOVEQ	#0,D3
+	MOVE.B	(0,A0,D0.W),D1
 	BPL.S	dbg_AutoTypeNoShift
 	MOVEQ	#1,D3			; bit 7 = shift
 dbg_AutoTypeNoShift:
@@ -386,6 +406,10 @@ dbg_CmdWait:
 	MOVE.W	D0,dbg_AutoWait
 	MOVEQ	#0,D0
 	RTS
+dbg_CmdHostPtr:
+	SF	dbg_AutoPtrSet
+	MOVEQ	#0,D0
+	RTS
 ; NOHOST: wrap input handler, rawkey -> null (blocks host keyboard)
 dbg_CmdNoHost:
 	TST.L	dbg_InOrig
@@ -396,6 +420,8 @@ dbg_CmdNoHost:
 	RTS
 dbg_InWrap:				; a0=event chain a1=is_Data
 	MOVE.L	A0,-(A7)
+	TST.W	dbg_InEvOwn		; INEV event: let through
+	BNE.S	.go
 .l:	MOVE.L	A0,D0
 	BEQ.S	.go
 	CMPI.B	#1,4(A0)		; ie_Class = IECLASS_RAWKEY
@@ -460,16 +486,22 @@ dbg_CmdShot:				; SHOT name
 	BSR.W	dbg_FileClose
 	MOVEQ	#0,D0
 	RTS
-dbg_CmdDump:				; DUMP h off len name
+dbg_CmdDump:				; DUMP h off len name (h+128: pointer)
 	BSR.W	dbg_ParseNum
+	MOVE.W	D0,-(A7)
+	BCLR	#7,D0
 	CMP.W	#4,D0
-	BHI.S	dbg_CmdFail
+	BHI.S	.f
 	ADD.W	D0,D0
 	ADD.W	D0,D0
 	LEA	dbg_HunkTab,A0
 	MOVEA.L	(0,A0,D0.W),A4
 	BSR.W	dbg_ParseNum
 	ADDA.L	D0,A4
+	BTST	#7,1(A7)
+	BEQ.S	.d
+	MOVEA.L	(A4),A4
+.d:	ADDQ.L	#2,A7
 	BSR.W	dbg_ParseNum
 	MOVE.L	D0,D5
 	BSR.W	dbg_SkipSpace
@@ -484,6 +516,8 @@ dbg_CmdDump:				; DUMP h off len name
 	BSR.W	dbg_FileClose
 	MOVEQ	#0,D0
 	RTS
+.f:	ADDQ.L	#2,A7
+	BRA.W	dbg_CmdFail
 dbg_CmdPoke:				; POKE h off val (byte)
 	BSR.W	dbg_ParseNum
 	CMP.W	#4,D0
@@ -509,12 +543,17 @@ dbg_CmdHw:				; HW: snapshot of paula-relevant read regs -> dbg_HwSnap
 	MOVE.W	$DFF010,(A0)+
 	MOVEQ	#0,D0
 	RTS
+dbg_CmdAdk:				; ADK val: write adkcon (decimal, bit 15 = set)
+	BSR.W	dbg_ParseNum
+	MOVE.W	D0,$DFF09E
+	MOVEQ	#0,D0
+	RTS
 dbg_CmdInEv:				; INEV class code qual x y (x/y > 32767 = neg)
 	LEA	dbg_InEvent,A4		; via input.device IND_WRITEEVENT
 	CLR.L	(A4)
 	BSR.W	dbg_ParseNum
 	MOVE.B	D0,4(A4)		; ie_Class
-	CLR.B	5(A4)
+	CLR.B	5(A4)		; subclass 0: amikit drops others
 	BSR.W	dbg_ParseNum
 	MOVE.W	D0,6(A4)		; ie_Code
 	BSR.W	dbg_ParseNum
@@ -530,7 +569,9 @@ dbg_CmdInEv:				; INEV class code qual x y (x/y > 32767 = neg)
 	MOVE.W	#11,28(A1)		; IND_WRITEEVENT
 	MOVE.L	A4,40(A1)		; io_Data
 	MOVE.L	#22,36(A1)		; io_Length
+	ST	dbg_InEvOwn
 	JSR	(-456,A6)		; DoIO
+	SF	dbg_InEvOwn
 	MOVEQ	#0,D0
 	RTS
 
@@ -804,8 +845,10 @@ dbg_CmdTab:
 	DC.L	dbg_CmdPoke,dbg_StrPoke
 	DC.L	dbg_CmdInEv,dbg_StrInEv
 	DC.L	dbg_CmdNoHost,dbg_StrNoHost
+	DC.L	dbg_CmdHostPtr,dbg_StrHostPtr
 	DC.L	dbg_CmdLog,dbg_StrLog
 	DC.L	dbg_CmdHw,dbg_StrHw
+	DC.L	dbg_CmdAdk,dbg_StrAdk
 	DC.L	dbg_CmdEnd,dbg_StrEnd
 	DC.L	dbg_CmdQuit,dbg_StrQuit
 	DC.L	0
@@ -814,6 +857,7 @@ dbg_HunkTab:
 dbg_StrPoke:	DC.B	"POKE",0
 dbg_StrInEv:	DC.B	"INEV",0
 dbg_StrNoHost:	DC.B	"NOHOST",0
+dbg_StrHostPtr:	DC.B	"HOSTPTR",0
 dbg_StrMouse:	DC.B	"MOUSE",0
 dbg_StrClick:	DC.B	"CLICK",0
 dbg_StrPress:	DC.B	"PRESS",0
@@ -828,6 +872,7 @@ dbg_StrShot:	DC.B	"SHOT",0
 dbg_StrDump:	DC.B	"DUMP",0
 dbg_StrLog:	DC.B	"LOG",0
 dbg_StrHw:	DC.B	"HW",0
+dbg_StrAdk:	DC.B	"ADK",0
 dbg_StrEnd:	DC.B	"END",0
 dbg_StrQuit:	DC.B	"QUIT",0
 dbg_AsciiRaw:			; ascii -> us rawcode, $7f = none, bit 7 = shift
@@ -953,6 +998,90 @@ dbg_FxName:
 dbg_FxMsg:
 	DC.B	"FX TRACE WRITTEN",0,0
 	EVEN
+
+;--- note start counters: dbg_NsCnt + kind*16 + ch*4
+;  kind 0 start, 1 irq vol/dma, 2 irq loop, 3 stop, 4 start
+;  while the previous one is still open
+dbg_AhiLog:				; soundfunc: d0 = ring distance
+	MOVEM.L	D0-D2/A0,-(A7)
+	TST.L	dat_RpPlayMode		; only while playing
+	BEQ.S	.f
+	MOVE.L	dbg_AhiPos,D1
+	CMP.L	#1024,D1
+	BCC.S	.f
+	ADDQ.L	#1,dbg_AhiPos
+	LSL.L	#3,D1
+	LEA	dbg_AhiBuf,A0
+	ADDA.L	D1,A0
+	MOVEQ	#0,D1			; cia-a tod: frames (hi first latches)
+	MOVE.B	$BFEA01,D1
+	SWAP	D1
+	MOVE.B	$BFE901,D1
+	LSL.W	#8,D1
+	MOVE.B	$BFE801,D1
+	MOVE.L	D1,D2			; * 313 pal lines: 256 + 64 - 8 + 1
+	LSL.L	#8,D2
+	ADD.L	D1,D2
+	LSL.L	#3,D1
+	SUB.L	D1,D2
+	LSL.L	#3,D1
+	ADD.L	D1,D2
+	MOVE.L	$DFF004,D1		; + beam line
+	LSR.L	#8,D1
+	AND.L	#$1ff,D1
+	ADD.L	D2,D1
+	MOVE.L	D1,(A0)+
+	SWAP	D0
+	CLR.W	D0
+	MOVE.L	D0,(A0)
+.f:	MOVEM.L	(A7)+,D0-D2/A0
+	RTS
+dbg_AhiRes:				; resync of the last entry
+	MOVEM.L	D1/A0,-(A7)
+	MOVE.L	dbg_AhiPos,D1
+	BEQ.S	.r
+	CMP.L	#1024,D1
+	BHI.S	.r
+	LSL.L	#3,D1
+	LEA	dbg_AhiBuf,A0
+	ORI.W	#1,(-2,A0,D1.L)
+.r:	MOVEM.L	(A7)+,D1/A0
+	RTS
+dbg_NsStart:				; a6 = channel
+	MOVEM.L	D0/A0,-(A7)
+	MOVE.W	(n_pt4_chanbit,A6),D0
+	AND.W	#3,D0
+	LSL.W	#2,D0
+	LEA	dbg_NsCnt,A0
+	ADDQ.L	#1,(0,A0,D0.W)
+	TST.B	(n_pt4_dmawait,A6)
+	BEQ.S	dbg_NsStartDone
+	ADDQ.L	#1,(64,A0,D0.W)
+dbg_NsStartDone:
+	MOVEM.L	(A7)+,D0/A0
+	RTS
+dbg_NsIrq1:				; a1 = channel
+	MOVE.L	D1,-(A7)
+	MOVEQ	#16,D1
+	BRA.S	dbg_NsIrq
+dbg_NsIrq2:
+	MOVE.L	D1,-(A7)
+	MOVEQ	#32,D1
+	BRA.S	dbg_NsIrq
+dbg_NsStop:
+	MOVE.L	D1,-(A7)
+	MOVEQ	#48,D1
+dbg_NsIrq:
+	MOVEM.L	D0/A0,-(A7)
+	MOVE.W	(n_pt4_chanbit,A1),D0
+	AND.W	#3,D0
+	LSL.W	#2,D0
+	ADD.W	D1,D0
+	LEA	dbg_NsCnt,A0
+	ADDQ.L	#1,(0,A0,D0.W)
+	MOVEM.L	(A7)+,D0/A0
+	MOVE.L	(A7)+,D1
+	RTS
 	ENDC
 
 	IFD	DEBUGTRAP
@@ -1011,18 +1140,47 @@ dbg_Show:
 	LEA	dbg_Text,A0
 	MOVE.B	#"T",(A0)+
 	MOVE.B	D0,D2
-	BSR.S	dbg_Hex1
+	BSR.W	dbg_Hex1
 	MOVE.B	#" ",(A0)+
 	MOVE.B	#"P",(A0)+
 	MOVE.B	#"C",(A0)+
 	MOVE.L	D7,D2
-	BSR.S	dbg_Hex8
+	BSR.W	dbg_Hex8
 	MOVE.B	#" ",(A0)+
 	MOVE.B	#"A",(A0)+
 	MOVE.B	#"D",(A0)+
 	MOVE.L	D6,D2
-	BSR.S	dbg_Hex8
+	BSR.W	dbg_Hex8
 	CLR.B	(A0)
+	IFD	DIAGK
+	LEA	dbg_Text,A2		; to the debug log; task: sleep, system lives
+	MOVEA.L	ABSEXECBASE.W,A6
+	MOVEQ	#'<',D0
+	JSR	(-516,A6)
+	MOVEA.L	276(A6),A0
+	MOVE.L	10(A0),D0		; task name
+	BEQ.S	.nm
+	MOVEA.L	D0,A3
+.nc:	MOVE.B	(A3)+,D0
+	BEQ.S	.nm
+	JSR	(-516,A6)
+	BRA.S	.nc
+.nm:	MOVEQ	#' ',D0
+	JSR	(-516,A6)
+.tc:	MOVE.B	(A2)+,D0
+	BEQ.S	.te
+	JSR	(-516,A6)
+	BRA.S	.tc
+.te:	MOVEQ	#'>',D0
+	JSR	(-516,A6)
+	MOVE.W	(A7),D0			; sr of the frame (020+): from a task?
+	BTST	#13,D0
+	BNE.S	dbg_Halt
+	MOVE.W	#$0000,SR		; user mode, its own stack
+.zz:	MOVEQ	#0,D0
+	JSR	(-318,A6)		; Wait(0)
+	BRA.S	.zz
+	ENDC
 	LEA	dbg_Text,A0
 	JSR	pt_ShowStatusMsg
 dbg_Halt:
@@ -1031,7 +1189,7 @@ dbg_Hex8:				; d2 as 8 hex digits -> (a0)+
 	MOVEQ	#7,D3
 dbg_HexLoop:
 	ROL.L	#4,D2
-	BSR.S	dbg_Hex1
+	BSR.W	dbg_Hex1
 	DBF	D3,dbg_HexLoop
 	RTS
 dbg_Hex1:				; low nibble of d2 as digit

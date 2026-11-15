@@ -4,6 +4,8 @@
 
 	INCLUDE	"src/ui/setup41_layout.i"
 
+SET_MQMAX	EQU	40		; AHI mode name kept for the marquee
+
 ;--- pages
 ; replaces pt_0621: unpack block 11 / swap back, then paint page
 pt_SetLoadPage:
@@ -115,6 +117,8 @@ pt_SetRedrawSel:
 pt_SetDrawP1:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	BSR.W	pt_SndDraw
+	BSR.W	pt_NoteDraw
+	BSR.W	pt_MidiDraw
 	BSR.W	pt_SetStatus
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
@@ -321,7 +325,7 @@ pt_SysHardware:
 	LEA	set_AhiName(PC),A1
 	LEA	350(A6),A0
 	BSR.W	pt_SysFindVer
-	LEA	set_TxtNone(PC),A1	; not loaded but present -> "PRESENT" not "NONE"
+	LEA	set_TxtNone(PC),A1	; not loaded but present -> "FOUND" not "NONE"
 	CMPA.L	A1,A0
 	BNE.S	.ahiv
 	MOVEM.L	D0-D2/A6,-(A7)
@@ -329,6 +333,7 @@ pt_SysHardware:
 	MOVE.L	#set_AhiDevPath,D1
 	MOVEQ	#-2,D2
 	JSR	(-84,A6)
+	LEA	set_TxtNone(PC),A0	; Lock trashes a0
 	MOVE.L	D0,D1
 	BEQ.S	.ahin
 	JSR	(-90,A6)
@@ -348,7 +353,24 @@ pt_SysHardware:
 	BSR.W	pt_SysHasLib
 	BEQ.S	.rtg
 	LEA	set_TxtCgx(PC),A0
-.rtg:	MOVE.W	#SV_RTGCARD_POS,D1
+.rtg:	LEA	set_TxtNone(PC),A1	;41 library but no card mode: NONE
+	CMPA.L	A1,A0
+	BEQ.S	.rtgp
+	MOVE.L	A0,-(A7)
+	MOVEA.L	dat_GfxLibBase,A6
+	MOVE.L	#512,D0
+	JSR	pt_RtgFindMode
+	CMP.L	#-1,D0
+	BNE.S	.rtgm
+	MOVE.L	#480,D0
+	JSR	pt_RtgFindMode
+	CMP.L	#-1,D0
+	BNE.S	.rtgm
+	ADDQ.L	#4,A7
+	LEA	set_TxtNone(PC),A0
+	BRA.S	.rtgp
+.rtgm:	MOVEA.L	(A7)+,A0
+.rtgp:	MOVE.W	#SV_RTGCARD_POS,D1
 	MOVEQ	#SV_RTGCARD_N,D0
 	BSR.W	pt_SetPut
 ; mixer
@@ -449,25 +471,15 @@ pt_SetStatus:
 	LEA	set_Line3,A1
 	LEA	set_TxtMixer(PC),A0
 	BSR.W	pt_SetCat
-	LEA	set_TxtNA(PC),A0
+	JSR	pt_SndRateStr41
 	TST.B	mix_Enabled
-	BEQ.S	.m2
-	TST.B	mix_RateSel
-	BNE.S	.m1
-	LEA	set_TxtAuto(PC),A0
-	BSR.W	pt_SetCat
-.m1:	MOVEQ	#0,D0
-	MOVE.W	mix_Rate,D0
-	LEA	set_Num,A0
-	BSR.W	pt_SetFmtNum
-	LEA	set_Num,A0
-	BSR.W	pt_SetCat
-	LEA	set_TxtHz(PC),A0
-	BSR.W	pt_SetCat
+	BEQ.S	.m3
+	TST.B	agus_On
+	BNE.S	.m3
 	TST.B	mix_Active
 	BEQ.S	.m3
 	LEA	set_TxtMixAct(PC),A0
-.m2:	BSR.W	pt_SetCat
+	BSR.W	pt_SetCat
 .m3:
 	LEA	set_Line3,A0
 	MOVE.W	#SV_STAT_MIX_POS,D1
@@ -510,16 +522,64 @@ pt_SetStatus:
 .r:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 
+; saved output amigus, card was busy at start: a new try every 2 s,
+; at most 10; then a message, output stays paula
+pt_AgusRetry:
+	TST.B	agus_Retry
+	BEQ.W	.r
+	TST.B	agus_On			; switched by hand meanwhile
+	BNE.W	.off
+	CMPI.B	#1,snd_Choice		; output changed by hand (ahi)
+	BNE.W	.off
+	TST.L	dat_RpPlayMode		; never under running play
+	BNE.S	.r
+	MOVEM.L	D0-D1/A0-A1,-(A7)
+	JSR	pt_StatusTicks
+	MOVE.L	agus_RetryAt,D1		; due (or the clock passed midnight)
+	SUB.L	D0,D1
+	BLE.S	.due
+	CMP.L	#200,D1
+	BLS.S	.x			; not yet
+.due:	ADD.L	#100,D0
+	MOVE.L	D0,agus_RetryAt
+	JSR	pt_AgusOn
+	TST.L	D0
+	BNE.S	.fail
+	JSR	pt_MixStop		; restart for the card
+	SF	agus_Retry
+	SF	prf_AgusKeep
+	MOVE.B	#3,snd_Choice
+	BSR.W	pt_SndRefresh
+	BRA.S	.x
+.fail:	SUBQ.B	#1,agus_Retry
+	BNE.S	.x
+	SF	prf_AgusKeep
+	LEA	agus_MsgBusy,A0		; given up: say so
+	JSR	pt_StatusLater41
+.x:	MOVEM.L	(A7)+,D0-D1/A0-A1
+.r:	RTS
+.off:	SF	agus_Retry
+	SF	prf_AgusKeep
+	RTS
+
 ; output path text -> a1 (0-term), a1 -> the 0
 pt_SetSndText:
 	CLR.B	(A1)
-	TST.B	ahi_Active
+	TST.B	agus_On
+	BEQ.S	.nag
+	LEA	set_TxtAgus(PC),A0
+	BSR.W	pt_SetCat
+	LEA	set_TxtCard192(PC),A0
+	BRA.W	pt_SetCat
+.nag:	TST.B	ahi_Active
 	BEQ.S	.paula
 	LEA	set_TxtAhi(PC),A0
 	BSR.W	pt_SetCat
+	MOVE.L	ahi_Real,D0		; rate ahi runs at
+	BNE.S	.ar
 	MOVEQ	#0,D0
 	MOVE.W	ahi_Freq,D0
-	LEA	set_Num,A0
+.ar:	LEA	set_Num,A0
 	BSR.W	pt_SetFmtNum
 	LEA	set_Num,A0
 	BSR.W	pt_SetCat
@@ -540,6 +600,9 @@ pt_SetSndText:
 	LEA	set_Num,A0
 	BSR.W	pt_SetCat
 	LEA	set_TxtHz(PC),A0
+	TST.B	ahi_Failed		; now line has 26 chars: no room for HZ
+	BEQ.S	.cat
+	ADDQ.L	#3,A0
 .cat:	TST.B	ahi_Failed
 	BEQ.W	pt_SetCat
 	BSR.W	pt_SetCat
@@ -548,10 +611,16 @@ pt_SetSndText:
 
 ; hint line: a0=text
 pt_SetHint:
+	MOVEA.L	ABSEXECBASE.W,A0
+	BTST	#1,(297,A0)		; 68020 or better
+	BNE.S	.020
+	JSR	pt_AgusDetect
+	LEA	set_HintAgus(PC),A0	; 68000: card needs no mixer
+	TST.L	agus_Card
+	BNE.S	.r
 	LEA	set_HintCpu(PC),A0
-	TST.B	mix_Enabled
-	BEQ.S	.r
-	LEA	set_HintAhiF(PC),A0
+	RTS
+.020:	LEA	set_HintAhiF(PC),A0
 	TST.B	ahi_Failed
 	BNE.S	.r
 	LEA	set_HintRtgF(PC),A0
@@ -560,8 +629,9 @@ pt_SetHint:
 	LEA	aut_HintAuto(PC),A0
 	MOVE.B	prf_AutoAhi,D0
 	OR.B	prf_AutoRtg,D0
+	OR.B	prf_AutoAgus,D0
 	BNE.S	.r
-	LEA	set_HintNone(PC),A0
+	LEA	set_HintBuild(PC),A0	; no warning: build stamp
 .r:	RTS
 
 ; append a0 to a1 (a1 -> end 0)
@@ -618,10 +688,40 @@ pt_SetDiv10:
 ;--- task poll
 ; from pt_MixTaskPoll: redraw status every 25 passes
 pt_SetPoll:
+	JSR	pt_MidiTask		; midi notes in the main task
+	BSR.W	pt_SetMqPoll
+	TST.B	snd_RateHeld		; rate arrow latched: free on button up
+	BEQ.S	.held
+	LMB
+	BEQ.S	.held
+	SF	snd_RateHeld
+.held:
 	TST.B	set_Ready		; first pass -> apply saved color scheme
 	BNE.S	.go
 	BSR.W	pt_SchStart
+	CMPI.B	#3,snd_Choice		; saved output amigus
+	BNE.S	.go
+	JSR	pt_AgusDetect		; card only now (paula: library stays shut)
+	MOVE.B	#1,snd_Choice
+	ST	prf_AgusKeep		; stays in SAVE CONFIG until taken or changed
+	TST.L	agus_Card
+	BNE.S	.card
+	LEA	agus_MsgNone,A0		; no card: say so once, no retry
+	JSR	pt_StatusLater41
+	BRA.S	.go
+.card:	JSR	pt_AgusOn
+	TST.L	D0
+	BNE.S	.busy
+	JSR	pt_MixStop		; mixer may run for paula: restart for the card
+	SF	prf_AgusKeep
+	MOVE.B	#3,snd_Choice
+	BRA.S	.go
+.busy:	MOVE.B	#10,agus_Retry		; card not ready yet (boot, other
+	JSR	pt_StatusTicks		; program releasing it): try again
+	ADD.L	#100,D0			; every 2 s
+	MOVE.L	D0,agus_RetryAt
 .go:	ST	set_Ready
+	BSR.W	pt_AgusRetry
 	BSR.W	pt_AutoMsg
 	TST.B	snd_Defer		; pending output switch
 	BEQ.S	.nodef
@@ -641,7 +741,10 @@ pt_SetPoll:
 	CMPI.B	#25,set_PollCnt
 	BCS.S	.r
 	CLR.B	set_PollCnt
-	BRA.W	pt_SetStatus
+	TST.B	set_Page		; system page: rtg state follows the mirror
+	BEQ.S	.st
+	BSR.W	pt_GfxPoll
+.st:	BRA.W	pt_SetStatus
 .r:	RTS
 
 ;--- texts
@@ -652,7 +755,7 @@ set_TxtFpu882:	DC.B	"68882",0
 set_TxtFpuInt:	DC.B	"INTERN",0
 set_TxtNA:	DC.B	"N/A",0
 set_TxtNone:	DC.B	"NONE",0
-set_TxtInst:	DC.B	"PRESENT",0		; field 7 chars
+set_TxtInst:	DC.B	"FOUND",0		; full 7 chars: the T hits the frame
 set_AhiDevPath:	DC.B	"DEVS:ahi.device",0
 set_TxtP96:	DC.B	"P96",0
 set_TxtCgx:	DC.B	"CGX",0
@@ -669,14 +772,19 @@ set_TxtNative:	DC.B	"NATIVE PAL",0
 set_TxtRtgWin:	DC.B	"RTG WINDOW ON WORKBENCH",0
 set_TxtNativeN:	DC.B	"NATIVE NTSC",0
 set_TxtAhi:	DC.B	"AHI ",0
+set_TxtAgus:	DC.B	"AMIGUS WAVETABLE",0
+set_TxtCard192:	DC.B	" 192 KHZ",0
 set_TxtPaula4:	DC.B	"PAULA 4CH DIRECT",0
 set_TxtPaula8:	DC.B	"PAULA MIX 8CH ",0
 set_TxtPaula8N:	DC.B	"PAULA 8CH, NO MIXER",0
-set_TxtAhiFail:	DC.B	" (NO AHI)",0
-set_HintCpu:	DC.B	"MIXER, AHI AND RTG NEED A 68020",0
+set_TxtAhiFail:	DC.B	" NO AHI",0
+set_HintCpu:	DC.B	"AHI AND RTG NEED A 68020",0
 set_HintAhiF:	DC.B	"AHI COULD NOT OPEN, PAULA IS USED",0
 set_HintRtgF:	DC.B	"NO SUITABLE RTG SCREEN MODE",0
-set_HintNone:	DC.B	0
+set_HintAgus:	DC.B	"AMIGUS SOUND CARD FOUND",0
+set_HintBuild:	DC.B	"BUILD "
+	STAMP
+	DC.B	0
 set_VerName:	DC.B	"version.library",0
 set_AhiName:	DC.B	"ahi.device",0
 set_P96Name:	DC.B	"Picasso96API.library",0
@@ -704,7 +812,94 @@ pt_SetNewGadget:
 	BEQ.W	pt_SndStDown
 	CMP.W	#SG_DESIGN,D2		; color scheme (also on 68000)
 	BEQ.W	pt_SchGadget
+	CMP.W	#SG_NOTES,D2		; note range (also on 68000)
+	BEQ.W	pt_NoteGadget
+	CMP.W	#SG_MIDI_UP,D2		; midi in (also on 68000)
+	BEQ.W	pt_MidiUp
+	CMP.W	#SG_MIDI_DOWN,D2
+	BEQ.W	pt_MidiDn
+	CMP.W	#SG_CHANNELS_UP,D2	; track count (also on 68000)
+	BEQ.W	pt_ChnUp41
+	CMP.W	#SG_CHANNELS_DOWN,D2
+	BEQ.W	pt_ChnDn41
+	CMP.W	#SG_ONLOAD,D2		; 4ch mods in 8ch mode (also on 68000)
+	BEQ.W	pt_LoadModeGadget
+	CMP.W	#SG_AHIFLT,D2
+	BEQ.W	pt_FltGadget
 	JMP	pt_GfxGadget
+
+; ON LOAD: AUTO (4ch module -> 4ch mode) / KEEP (into 8 tracks)
+pt_LoadModeGadget:
+	JSR	pt_WaitMouseRelease
+	NOT.B	prf_LoadKeep
+	BSR.W	pt_LoadModeDraw
+	LEA	set_MsgAuto(PC),A0
+	TST.B	prf_LoadKeep
+	BEQ.S	.m
+	LEA	set_MsgKeep(PC),A0
+.m:	JMP	pt_ShowStatusMsg
+pt_LoadModeDraw:
+	MOVEM.L	D0-D1/A0,-(A7)
+	LEA	set_TxtLAuto(PC),A0
+	TST.B	prf_LoadKeep
+	BEQ.S	.d
+	LEA	set_TxtLKeep(PC),A0
+.d:	MOVE.W	#SV_ONLOAD_POS,D1
+	MOVEQ	#SV_ONLOAD_N,D0
+	BSR.W	pt_SetPut
+	MOVEM.L	(A7)+,D0-D1/A0
+	RTS
+; AHI FLT: off -> a1200 -> a500
+pt_FltGadget:
+	JSR	pt_WaitMouseRelease
+	TST.B	ahi_Active		; only ahi: value stays
+	BNE.S	.on
+	LEA	flt_MsgNoAhi(PC),A0
+	JMP	pt_ShowStatusMsg
+.on:	MOVE.B	ahi_FltMode,D0
+	ADDQ.B	#1,D0
+	CMP.B	#3,D0
+	BCS.S	.s
+	MOVEQ	#0,D0
+.s:	MOVE.B	D0,ahi_FltMode
+	JSR	pt_CardFltReset41
+	BSR.S	pt_FltDraw
+	LEA	flt_Msg(PC),A0
+	MOVEQ	#0,D0
+	MOVE.B	ahi_FltMode,D0
+	MULU	#26,D0
+	ADDA.W	D0,A0
+	JMP	pt_ShowStatusMsg
+pt_FltDraw:
+	MOVEM.L	D0-D1/A0,-(A7)
+	LEA	flt_Txt(PC),A0
+	MOVEQ	#0,D0
+	MOVE.B	ahi_FltMode,D0
+	MULU	#6,D0
+	ADDA.W	D0,A0
+	TST.B	ahi_Active
+	BNE.S	.fd
+	LEA	set_TxtNA(PC),A0	; value kept, no effect now
+.fd:	MOVE.W	#SV_AHIFLT_POS,D1
+	MOVEQ	#SV_AHIFLT_N,D0
+	BSR.W	pt_SetPut
+	MOVEM.L	(A7)+,D0-D1/A0
+	RTS
+flt_Txt:	DC.B	"OFF",0,0,0
+	DC.B	"A1200",0
+	DC.B	"A500",0,0
+flt_Msg:	DC.B	"AHI FILTER: OFF",0
+	DS.B	10
+	DC.B	"AHI FILTER: LED 3.1 KHZ",0,0,0
+	DC.B	"AHI FILTER: RC + LED",0
+	DS.B	5
+flt_MsgNoAhi:	DC.B	"AHI FILTER: ONLY WITH AHI",0
+	EVEN
+set_TxtLAuto:	DC.B	"AUTO",0
+set_TxtLKeep:	DC.B	"KEEP",0
+set_MsgAuto:	DC.B	"4CH MODS: SWITCH TO 4CHN",0
+set_MsgKeep:	DC.B	"4CH MODS: LOAD INTO 8CHN",0
+	EVEN
 
 ;--- sound
 ; output: paula/ahi at runtime (play stopped, audio.device + ints swapped)
@@ -714,22 +909,65 @@ pt_SetNewGadget:
 ; output gad: stop play, pend switch; pt_SetPoll does it after 0.5 s
 ; (switch straight from running playback hangs)
 pt_SndOutput:
+	JSR	pt_AgusDetect		; card offered from here on
 	MOVEA.L	ABSEXECBASE.W,A6
 	BTST	#1,(297,A6)		; ahi needs the mixer
 	BNE.S	.cpu
-	LEA	snd_Msg020(PC),A0
+	TST.L	agus_Card		; 68000: paula <-> amigus (no mixing)
+	BEQ.S	.no20
+	JSR	pt_WaitMouseRelease
+	MOVEQ	#1,D0
+	TST.B	agus_On
+	BNE.S	.go
+	MOVEQ	#3,D0
+	BRA.S	.go
+.no20:	LEA	snd_Msg020(PC),A0
 	JMP	pt_ShowStatusMsg
 .cpu:	JSR	pt_WaitMouseRelease
-	TST.B	ahi_NoPaula		; ahi -> paula always allowed
+	MOVEQ	#1,D0			; paula -> ahi -> amigus (card only) -> paula
+	TST.B	agus_On
 	BNE.S	.go
-	LEA	snd_MsgAhiFail(PC),A0	; failed once: no retry, paula stays
+	TST.B	ahi_NoPaula
+	BEQ.S	.frp
+	TST.L	agus_Card
+	BEQ.S	.go
+	MOVEQ	#3,D0
+	BRA.S	.go
+.frp:	MOVEQ	#2,D0
+	TST.B	ahi_Failed		; failed once: no retry
+	BEQ.S	.try
+	TST.L	agus_Card		; no card to go to: a click asks ahi again
+	BNE.S	.noahi
+	SF	ahi_Failed
+.try:
+	BSR.W	pt_SndAhiThere		; no ahi.device: amigus or stay on paula
+	BNE.S	.go
+.noahi:	MOVEQ	#3,D0
+	TST.L	agus_Card
+	BNE.S	.go
+	LEA	snd_MsgAhiFail(PC),A0
 	TST.B	ahi_Failed
 	BNE.S	.msg
-	BSR.W	pt_SndAhiThere		; no ahi.device: stay on paula, keep playing
-	BNE.S	.go
 	LEA	snd_MsgNoAhi(PC),A0
 .msg:	JMP	pt_ShowStatusMsg
-.go:
+.go:	TST.B	agus_On			; leaving the card: wide module?
+	BEQ.S	.go2
+	BSR.W	pt_SndWideAsk
+	BNE.S	.r
+.go2:	CMP.B	#1,D0			; to paula: direct dma needs chip ram
+	BNE.S	.go3
+	CMPI.W	#8,dat_RpNumChannels
+	BNE.S	.go4
+	TST.B	mix_Is68k
+	BEQ.S	.go3
+.go4:	MOVEM.L	D0,-(A7)
+	JSR	pt_SmpChipFits41
+	MOVEM.L	(A7)+,D0		; flags stay
+	BEQ.S	.go3
+	LEA	smp_MsgChip(PC),A0	; stay on this output
+	JMP	pt_ShowStatusMsg
+.go3:	MOVE.B	D0,snd_Target
+	SF	agus_Retry		; hand choice: start retry must not cut in
 ; if playing: stop, switch in main loop, resume at same pos (pt_SndResume)
 	BSR.W	pt_SndPause
 .idle:	ST	snd_Started		; from now only this choice counts (pt_AhiDetect)
@@ -737,6 +975,29 @@ pt_SndOutput:
 	MOVE.B	#2,snd_Defer
 	LEA	snd_MsgSwitch(PC),A0
 	JMP	pt_ShowStatusMsg
+.r:	RTS
+
+; wide module and the output leaves the card: tracks that go with notes ->
+; ask first; z=1 go on
+pt_SndWideAsk:
+	MOVEM.L	D0-D2/A0-A1,-(A7)
+	JSR	pt_WideKeep
+	TST.W	D0
+	BEQ.S	.r
+	MOVEQ	#8,D0			; first track past the 8 view (4 view: 4)
+	BTST	#5,dat_ModeFlags
+	BEQ.S	.k
+	MOVEQ	#4,D0
+.k:	MOVE.W	wide_Ch,D1
+	JSR	pt_ChnWideUsed41	; z=1: nothing lost, no question
+	BEQ.S	.r
+	IFD	DEBUGAUTO
+	ADDQ.W	#1,dbg_ChnAsk
+	ENDC
+	LEA	snd_AskWide8(PC),A0
+	JSR	pt_ShowYesNoDialog
+.r:	MOVEM.L	(A7)+,D0-D2/A0-A1	; flags stay
+	RTS
 
 ; z=1: no ahi.device (not loaded, not in DEVS:)
 pt_SndAhiThere:
@@ -757,7 +1018,7 @@ pt_SndAhiThere:
 	BEQ.S	.n
 	JSR	(-90,A6)		; UnLock
 .y:	MOVEM.L	(A7)+,D0-D2/A0-A1/A6
-	MOVEQ	#1,D0			; z=0
+	ANDI	#$fb,CCR		; z=0
 	RTS
 .n:	MOVEM.L	(A7)+,D0-D2/A0-A1/A6
 	CMP.B	D0,D0			; z=1
@@ -765,8 +1026,52 @@ pt_SndAhiThere:
 
 ; do pending switch (from pt_SetPoll)
 pt_SndOutputDo:
-	TST.B	ahi_NoPaula
-	BNE.S	.paula
+	ST	snd_Switch		; mixer keeps off paula meanwhile
+	BSR.S	.do
+	SF	snd_Switch
+	RTS
+.do:	SF	prf_AgusKeep
+	TST.B	agus_On			; amigus -> paula
+	BEQ.S	.na
+	JSR	pt_WideTo8		; wide module: keep what paula plays
+	MOVE.W	D0,-(A7)
+	JSR	pt_AgusOff
+	MOVE.B	#1,snd_Choice
+	JSR	pt_MixStop		; mixer restarts for the new owner
+	ST	smp_ChipDue		; card output let samples into fast ram
+	TST.B	mix_Is68k		; 68000: v1/2 dma at the next tick
+	BEQ.S	.ag2
+	JSR	pt_SmpChipNow41		; samples to chip before that
+.ag2:	BSR.W	pt_SndRefresh
+	MOVE.B	#3,snd_ResDefer
+	MOVE.W	(A7)+,D0
+	BNE.S	.wm
+	JMP	pt_ClearStatusMsg
+.wm:	BSR.W	pt_SndChanDraw
+	LEA	snd_MsgWide8(PC),A0
+	CMP.W	#8,D0
+	BEQ.S	.m
+	LEA	snd_MsgWide4(PC),A0
+.m:	JMP	pt_ShowStatusMsg
+.na:	CMPI.B	#3,snd_Target
+	BNE.S	.nt
+	IFD	DEBUGAUTO
+	JSR	pt_AgusDetect
+	ENDC
+	BSR.W	pt_SndAhiDrop		; ahi -> amigus: paula back first
+	MOVE.B	#1,snd_Choice
+	JSR	pt_AgusOn
+	TST.L	D0
+	BNE.S	.agf
+	MOVE.B	#3,snd_Choice
+	BRA.W	.done
+.agf:	JSR	pt_MixStop
+	BSR.W	pt_SndRefresh
+	MOVE.B	#3,snd_ResDefer
+	LEA	agus_MsgBusy,A0
+	JMP	pt_ShowStatusMsg
+.nt:	TST.B	ahi_NoPaula
+	BNE.W	.paula
 ; paula -> ahi: audio ints + dma off, give back vectors + audio.device
 	MOVE.W	#$0780,INTENA
 	MOVE.W	#$0780,INTREQ
@@ -791,12 +1096,7 @@ pt_SndOutputDo:
 	LEA	snd_MsgAhiFail(PC),A0
 	JMP	pt_ShowStatusMsg
 ; ahi -> paula
-.paula:	JSR	pt_AhiClose
-	SF	ahi_Want
-	SF	ahi_NoPaula
-	SF	ahi_Failed
-	MOVE.B	#1,snd_Choice
-	BSR.W	pt_SndPaulaOpen
+.paula:	BSR.W	pt_SndAhiDrop
 .done:	JSR	pt_MixStop		; mixer restarts for the new owner
 	BSR.W	pt_SndRefresh
 	MOVE.B	#3,snd_ResDefer		; resume stopped playback after 3 main passes
@@ -804,8 +1104,10 @@ pt_SndOutputDo:
 
 ; stop play for switch, save mode/pos/row; pt_SndResume = like CONTINUE
 pt_SndPause:
-	MOVE.L	dat_RpPlayMode,snd_ResMode
+	TST.L	dat_RpPlayMode		; stopped or 2nd click: keep what was saved
 	BEQ.S	.r
+	MOVE.L	dat_RpPlayMode,snd_ResMode
+	MOVE.L	dat_SongDataPtr,snd_ResEdit
 	MOVE.L	dat_RpSongPos,snd_ResSong
 	MOVE.L	dat_RpPatternPos,snd_ResPat
 	CLR.B	snd_ResDefer
@@ -823,8 +1125,13 @@ pt_SndResume:
 	MOVE.L	snd_ResPat,dat_RpPatternPos
 	CLR.L	dat_RpCounter
 	MOVE.L	D0,-(A7)
-	JSR	pt_SetPalettePlay
-	MOVE.L	(A7)+,D0
+	TST.L	snd_ResEdit		; was recording: record again
+	BEQ.S	.pl
+	MOVE.L	snd_ResEdit,dat_SongDataPtr
+	JSR	pt_SetPaletteRec
+	BRA.S	.pp
+.pl:	JSR	pt_SetPalettePlay
+.pp:	MOVE.L	(A7)+,D0
 	MOVE.L	D0,dat_RpPlayMode
 .r:	RTS
 
@@ -834,8 +1141,35 @@ pt_SndPaulaOpen:
 	CLR.B	31(A0)
 	CLR.W	32(A0)
 	JSR	pt_OpenAudioDev
-	JSR	pt_AddAudioInts
+	TST.L	D0
+	BEQ.S	.ok
+	ST	ahi_NoPaula		; no audio.device: paula not ours (no ints, no close)
+	RTS
+.ok:	JSR	pt_AddAudioInts
 	JMP	pt_MixRestoreDirect
+
+; ahi has or holds the output: mixer off, ahi closed, paula ours again
+; (task; flags fall only after the mixer stop, else a tick programs
+; paula with the ahi rate)
+pt_SndAhiDrop:
+	TST.B	ahi_Active
+	BNE.S	.go
+	TST.B	ahi_NoPaula
+	BEQ.S	.r
+.go:	MOVEM.L	D0-D7/A0-A6,-(A7)
+	MOVE.B	snd_Switch,-(A7)
+	ST	snd_Switch
+	JSR	pt_MixStop
+	JSR	pt_AhiClose
+	SF	ahi_Want
+	SF	ahi_NoPaula
+	SF	ahi_Failed
+	ST	snd_Started		; else PT.ahi takes the output again
+	MOVE.B	#1,snd_Choice
+	BSR.S	pt_SndPaulaOpen
+	MOVE.B	(A7)+,snd_Switch
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+.r:	RTS
 
 ; mix rate AUTO/14/22/28 kHz (shared with rmb on CHANNELS, pt_MixRatePoll)
 pt_SndRateUp:
@@ -844,11 +1178,21 @@ pt_SndRateUp:
 pt_SndRateDown:
 	MOVEQ	#-1,D1
 pt_SndRate:
-	TST.B	mix_Enabled
+	TST.B	agus_On			; card resamples, no mixer
+	BEQ.S	.nag
+	LEA	snd_MsgCard(PC),A0
+	JMP	pt_ShowStatusMsg
+.nag:	TST.B	mix_Enabled
 	BNE.S	.ok
 	LEA	snd_Msg020(PC),A0
 	JMP	pt_ShowStatusMsg
-.ok:	MOVE.B	mix_RateSel,D0
+.ok:	TST.B	ahi_Active		; ahi: rates of the mode, reopens
+	BNE.W	pt_SndRateAhi41
+	BTST	#5,dat_ModeFlags	; 4ch: nothing is mixed
+	BEQ.S	.m8
+	LEA	snd_Msg8ch(PC),A0
+	JMP	pt_ShowStatusMsg
+.m8:	MOVE.B	mix_RateSel,D0
 	ADD.B	D1,D0
 	AND.B	#3,D0
 	MOVE.B	D0,mix_RateSel
@@ -877,33 +1221,38 @@ pt_SndVolSet:
 
 ; stereo 100/75/50/25/0 % (stored as reduction 0..4)
 pt_SndStUp:
+	JSR	pt_SndStereoOk41
+	BEQ.S	pt_SndStNA
 	TST.B	snd_StereoDown
 	BEQ.S	.d
 	SUBQ.B	#1,snd_StereoDown
 .d:	BSR.W	pt_SndWait
 	BRA.W	pt_SndRefresh
 pt_SndStDown:
+	JSR	pt_SndStereoOk41
+	BEQ.S	pt_SndStNA
 	CMPI.B	#4,snd_StereoDown
 	BCC.S	.d
 	ADDQ.B	#1,snd_StereoDown
 .d:	BSR.W	pt_SndWait
 	BRA.W	pt_SndRefresh
 
-; volume -> ahi (paula ring reads snd_PaulaVol at next mixer start)
+pt_SndStNA:
+	LEA	snd_MsgStereo(PC),A0
+	JMP	pt_ShowStatusMsg
+
+; volume -> ahi, or paula (ring and direct channels) at once
 pt_SndApplyVol:
 	MOVEM.L	D0-D3/A0-A2/A6,-(A7)
 	TST.B	ahi_Active
-	BEQ.S	.r
+	BEQ.S	.pa
 	MOVE.L	ahi_Ctrl,D0
 	BEQ.S	.r
 	MOVEA.L	D0,A2
-	BSR.W	pt_SndAhiVol
-	MOVEQ	#0,D0
-	MOVE.L	#$8000,D2
-	MOVEQ	#1,D3
 	MOVEA.L	ahi_Base,A6
-	JSR	(_LVOAHI_SetVol,A6)
-	TST.B	mix_Active		; paula ring gets vol at next mixer start
+	JSR	pt_AhiVolBoth
+	BRA.S	.r
+.pa:	JSR	pt_SndPaulaLive41
 .r:	MOVEM.L	(A7)+,D0-D3/A0-A2/A6
 	RTS
 
@@ -956,12 +1305,22 @@ pt_SndAhiMode:
 	BSR.W	pt_SndAhiFree
 	TST.B	ahi_Active		; ahi running: reopen with new mode
 	BEQ.S	.d
+	BSR.S	pt_SndAhiReopen
+.d:	MOVE.B	#3,snd_ResDefer		; resume stopped playback
+	BRA.W	pt_SndRefresh
+.noahi:	MOVE.B	#3,snd_ResDefer		; resume also without ahi
+	LEA	snd_MsgNoAhi(PC),A0
+	JMP	pt_ShowStatusMsg
+
+; ahi running: close, open again (new mode or rate)
+pt_SndAhiReopen:
+	ST	snd_Switch
 	JSR	pt_MixStop
 	JSR	pt_AhiClose
 	SF	ahi_Failed
 	JSR	pt_AhiOpen
 	TST.L	D0
-	BEQ.S	.d
+	BEQ.S	.r
 	LEA	snd_MsgAhiFail(PC),A0	; mode fails: ahi stays off, paula free -> back to paula
 	JSR	pt_ShowStatusMsg
 	SF	ahi_NoPaula
@@ -969,11 +1328,9 @@ pt_SndAhiMode:
 	ST	snd_Started
 	MOVE.B	#1,snd_Choice
 	BSR.W	pt_SndPaulaOpen
-.d:	MOVE.B	#3,snd_ResDefer		; resume stopped playback
-	BRA.W	pt_SndRefresh
-.noahi:	MOVE.B	#3,snd_ResDefer		; resume also without ahi
-	LEA	snd_MsgNoAhi(PC),A0
-	JMP	pt_ShowStatusMsg
+	JSR	pt_MixStop		; restart on paula
+.r:	SF	snd_Switch
+	RTS
 
 ; AHIBase for task queries (no unit) -> Z=0 a6=AHIBase if open
 pt_SndAhiBase:
@@ -1012,7 +1369,7 @@ pt_SndAhiFree:
 pt_SndAhiName:
 	MOVEM.L	D0-D2/A0-A2/A6,-(A7)
 	TST.B	snd_NameOk
-	BNE.S	.r
+	BNE.W	.r
 	LEA	snd_AhiName,A1
 	LEA	snd_TxtPrefs(PC),A0
 	MOVE.L	snd_AhiMode,D0
@@ -1025,12 +1382,19 @@ pt_SndAhiName:
 	MOVE.L	#AHIDB_BufferLen,8(A1)
 	MOVE.L	#40,12(A1)
 	CLR.L	16(A1)
+	CLR.B	snd_AhiName
 	MOVE.L	snd_AhiMode,D0
 	SUBA.L	A2,A2
 	JSR	(_LVOAHI_GetAudioAttrsA,A6)
 	BSR.W	pt_SndAhiFree
 	LEA	snd_AhiName,A0
 	MOVE.B	#0,39(A0)
+	TST.B	(A0)
+	BNE.S	.up
+	CLR.L	snd_AhiMode		; id not known (any more): default mode
+	LEA	snd_TxtPrefs(PC),A0
+	LEA	snd_AhiName,A1
+	BRA.S	.copy
 .up:	MOVE.B	(A0),D0			; upper case (program font)
 	BEQ.S	.ok
 	CMP.B	#'a',D0
@@ -1046,6 +1410,77 @@ pt_SndAhiName:
 .r:	MOVEM.L	(A7)+,D0-D2/A0-A2/A6
 	RTS
 
+; text a0 into the AHI mode field; longer: marquee as the status line
+pt_SetAhiMode:
+	MOVEM.L	D0-D1/A0-A1,-(A7)
+	CLR.W	set_MqLen
+	MOVEA.L	A0,A1
+	MOVEQ	#-1,D0
+.l:	ADDQ.W	#1,D0
+	TST.B	(A1)+
+	BNE.S	.l
+	CMP.W	#SV_AHIMODE_N,D0
+	BLS.S	.put
+	CMP.W	#SET_MQMAX,D0
+	BLS.S	.c0
+	MOVEQ	#SET_MQMAX,D0
+.c0:	MOVE.W	D0,set_MqLen
+	LEA	set_MqBuf,A1
+	SUBQ.W	#1,D0
+.c:	MOVE.B	(A0)+,(A1)+
+	DBF	D0,.c
+	CLR.W	set_MqPos
+	JSR	pt_StatusTicks
+	ADD.L	#STAT_HOLD,D0
+	MOVE.L	D0,set_MqNext
+	LEA	set_MqBuf,A0
+.put:	MOVE.W	#SV_AHIMODE_POS,D1
+	MOVEQ	#SV_AHIMODE_N,D0
+	BSR.W	pt_SetPut
+	MOVEM.L	(A7)+,D0-D1/A0-A1
+	RTS
+
+; main loop: next marquee step of the AHI mode field (page SETUP)
+pt_SetMqPoll:
+	TST.W	set_MqLen
+	BEQ.S	.r
+	CMPI.W	#5,dat_UIMode
+	BNE.S	.off
+	TST.B	set_Page
+	BNE.S	.off
+	MOVEM.L	D0-D3/A0,-(A7)
+	JSR	pt_StatusTicks
+	MOVE.L	set_MqNext,D1		; due (or the clock passed midnight)
+	SUB.L	D0,D1
+	BLE.S	.due
+	CMP.L	#2*STAT_HOLD,D1
+	BLS.S	.x
+.due:	MOVE.W	set_MqLen,D2
+	SUB.W	#SV_AHIMODE_N,D2	; last start
+	MOVE.W	set_MqPos,D1
+	MOVEQ	#STAT_STEP,D3
+	ADDQ.W	#1,D1
+	CMP.W	D2,D1
+	BLE.S	.in
+	MOVEQ	#0,D1			; past the end: start again
+.in:	TST.W	D1
+	BEQ.S	.h
+	CMP.W	D2,D1
+	BNE.S	.s
+.h:	MOVE.W	#STAT_HOLD,D3		; hold at both ends
+.s:	MOVE.W	D1,set_MqPos
+	ADD.L	D3,D0
+	MOVE.L	D0,set_MqNext
+	LEA	set_MqBuf,A0
+	ADDA.W	D1,A0
+	MOVE.W	#SV_AHIMODE_POS,D1
+	MOVEQ	#SV_AHIMODE_N,D0
+	BSR.W	pt_SetPut
+.x:	MOVEM.L	(A7)+,D0-D3/A0
+.r:	RTS
+.off:	CLR.W	set_MqLen		; page left: its draw starts again
+	RTS
+
 ; short wait so arrows dont race
 pt_SndWait:
 	MOVEM.L	D0-D1/A0-A1/A6,-(A7)
@@ -1055,6 +1490,17 @@ pt_SndWait:
 	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
 	RTS
 
+; channels value after a mode change (setup page on screen only)
+pt_SndChanDraw:
+	CMPI.W	#5,dat_UIMode
+	BNE.S	.r
+	TST.B	set_Page
+	BNE.S	.r
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	pt_0641
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+.r:	RTS
+
 ; redraw sound block values + status
 pt_SndRefresh:
 	BSR.S	pt_SndDraw
@@ -1063,12 +1509,17 @@ pt_SndRefresh:
 ; sound values (pg SETUP); CHANNELS, FILTER, SOFTINT drawn by beta 2
 pt_SndDraw:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
+	BSR.W	pt_LoadModeDraw
+	BSR.W	pt_FltDraw
 	LEA	set_Line2,A1
 	CLR.B	(A1)
 	LEA	snd_TxtPaula(PC),A0
 	TST.B	ahi_Active
-	BEQ.S	.o1
+	BEQ.S	.o0
 	LEA	snd_TxtAhi(PC),A0
+.o0:	TST.B	agus_On
+	BEQ.S	.o1
+	LEA	snd_TxtAgus(PC),A0
 .o1:	BSR.W	pt_SetCat
 	TST.B	ahi_Failed
 	BEQ.S	.o2
@@ -1080,21 +1531,7 @@ pt_SndDraw:
 	BSR.W	pt_SetPut
 	LEA	set_Line2,A1
 	CLR.B	(A1)
-	LEA	set_TxtNA(PC),A0
-	TST.B	mix_Enabled
-	BEQ.S	.m2
-	TST.B	mix_RateSel
-	BNE.S	.m1
-	LEA	set_TxtAuto(PC),A0
-	BSR.W	pt_SetCat
-.m1:	MOVEQ	#0,D0
-	MOVE.W	mix_Rate,D0
-	LEA	set_Num,A0
-	BSR.W	pt_SetFmtNum
-	LEA	set_Num,A0
-	BSR.W	pt_SetCat
-	LEA	set_TxtHz(PC),A0
-.m2:	BSR.W	pt_SetCat
+	JSR	pt_SndRateStr41
 	LEA	set_Line2,A0
 	MOVE.W	#SV_MIXRATE_POS,D1
 	MOVEQ	#SV_MIXRATE_N,D0
@@ -1105,20 +1542,25 @@ pt_SndDraw:
 	BEQ.S	.a
 	BSR.W	pt_SndAhiName
 	LEA	snd_AhiName,A0
-.a:	MOVE.W	#SV_AHIMODE_POS,D1
-	MOVEQ	#SV_AHIMODE_N,D0
-	BSR.W	pt_SetPut
+.a:	BSR.W	pt_SetAhiMode
 	MOVEQ	#10,D0
 	SUB.B	snd_VolDown,D0
 	MULU	#10,D0
 	MOVE.W	#SV_VOLUME_POS,D1
 	BSR.S	pt_SndPercent
-	MOVEQ	#4,D0
+	JSR	pt_SndStereoOk41
+	BNE.S	.st
+	LEA	set_TxtNA(PC),A0	; paula: no effect
+	MOVE.W	#SV_STEREO_POS,D1
+	MOVEQ	#SV_STEREO_N,D0
+	BSR.W	pt_SetPut
+	BRA.S	.sx
+.st:	MOVEQ	#4,D0
 	SUB.B	snd_StereoDown,D0
 	MULU	#25,D0
 	MOVE.W	#SV_STEREO_POS,D1
 	BSR.S	pt_SndPercent
-	MOVEM.L	(A7)+,D0-D7/A0-A6
+.sx:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 
 ; percent d0.w at pos d1
@@ -1136,22 +1578,30 @@ pt_SndPercent:
 AHIDB_Name	EQU	$8000806d
 AHIDB_BufferLen	EQU	$8000007a
 _LVOAHI_NextAudioID	EQU	-102
-_LVOAHI_GetAudioAttrsA	EQU	-108
 
 snd_TxtPaula:	DC.B	"PAULA",0
 snd_TxtAhi:	DC.B	"AHI",0
+snd_TxtAgus:	DC.B	"AMIGUS",0
 snd_TxtFailed:	DC.B	" (NO AHI)",0
 snd_TxtPrefs:	DC.B	"PREFS",0
 snd_Msg020:	DC.B	"NEEDS A 68020",0
+snd_Msg8ch:	DC.B	"MIX RATE: ONLY IN 8CHN",0
 snd_MsgAhiFail:	DC.B	"AHI FAILED",0
 snd_MsgNoAhi:	DC.B	"NO AHI.DEVICE",0
 snd_MsgSwitch:	DC.B	"SWITCHING OUTPUT...",0
-snd_MsgStop:	DC.B	"STOP PLAYBACK FIRST",0
+snd_MsgWide8:	DC.B	"WIDE MOD: TRACKS 1-8 KEPT",0
+snd_MsgWide4:	DC.B	"WIDE MOD: TRACKS 1-4 KEPT",0
+snd_AskWide8:	DC.B	10,10
+	DC.B	"  Without the card only",10
+	DC.B	" tracks 1-8 stay. Switch?",0
+snd_AskWide4:	DC.B	10,10
+	DC.B	"  Without the card only",10
+	DC.B	" tracks 1-4 stay. Switch?",0
 	EVEN
 
 ;--- graphics
 ; rtg runs the mirror process; screenmode steps card modes (8 bit,
-; 640x480/512; AUTO = search); scale 2X/1X at 640x512; fps 25/17/12/10;
+; 640x480/512; AUTO = search); scale 2X/1X at 640x512; fps 50/25/17/12;
 ; changes restart a running mirror
 pt_GfxGadget:
 	MOVEA.L	ABSEXECBASE.W,A6
@@ -1162,15 +1612,27 @@ pt_GfxGadget:
 .cpu:	CMP.W	#SG_RTG,D2
 	BEQ.S	pt_GfxRtg
 	CMP.W	#SG_SCREENMODE,D2
+	BCS.S	.on
+	CMP.W	#SG_FPS_DOWN,D2
+	BHI.S	.on
+	TST.L	rtg_Proc		; mode, aspect, fps: only with rtg on
+	BNE.S	.on
+	LEA	gfx_MsgOff(PC),A0
+	JMP	pt_ShowStatusMsg
+.on:	CMP.W	#SG_SCREENMODE,D2
 	BEQ.W	pt_GfxMode
 	CMP.W	#SG_SCALE_UP,D2
 	BEQ.W	pt_GfxScale
 	CMP.W	#SG_SCALE_DOWN,D2
-	BEQ.W	pt_GfxScale
+	BEQ.W	pt_GfxScaleDn
 	CMP.W	#SG_FPS_UP,D2
 	BEQ.W	pt_GfxFpsUp
 	CMP.W	#SG_FPS_DOWN,D2
 	BEQ.W	pt_GfxFpsDown
+	CMP.W	#SG_ROWS_UP,D2
+	BEQ.W	pt_GfxRowsUp
+	CMP.W	#SG_ROWS_DOWN,D2
+	BEQ.W	pt_GfxRowsDn
 	RTS
 
 ; OFF -> SCREEN (own card screen) -> WINDOW (on wb) -> OFF
@@ -1178,20 +1640,84 @@ pt_GfxRtg:
 	JSR	pt_WaitMouseRelease
 	ST	rtg_Tried		; no auto start from pt_RtgPoll
 	TST.L	rtg_Proc
-	BEQ.S	.on
-	JSR	pt_RtgClose
+	BEQ.W	.on
+	MOVEQ	#0,D0
+	TST.B	rtg_WinMode		; window -> off
+	BNE.S	.ask
+	MOVEQ	#3,D0
+	TST.B	rtg_WinBad		; screen -> window, not possible: off
+	BNE.S	.ask
+	JSR	pt_RtgWinOk41
+	TST.L	D0
+	BEQ.S	.cl
+.ask:	MOVE.L	D0,-(A7)		; next is off: wide module asks first
+	BSR.W	pt_GfxWideAsk
+	SNE	D1
+	MOVE.L	(A7)+,D0
+	TST.B	D1
+	BNE.S	.no
+.cl:	JSR	pt_RtgClose
 	TST.B	rtg_WinMode
 	BNE.S	.off
+	TST.L	D0
+	BNE.S	.nowin
 	MOVE.B	#1,rtg_WinMode
-	BSR.S	pt_GfxStart
+	BSR.W	pt_GfxStart
+	BSR.W	pt_GfxWideLost
 	BRA.W	pt_GfxRefresh
+.nowin:	LEA	gfx_MsgNoWin(PC),A0
+	SUBQ.W	#2,D0
+	BMI.S	.nw
+.nl:	TST.B	(A0)+
+	BNE.S	.nl
+	DBF	D0,.nl
+.nw:	JSR	pt_StatusLater41
 .off:	SF	rtg_Want
 	SF	rtg_WinMode
+	SF	rtg_WinBad
 	BRA.W	pt_GfxRefresh
 .on:	ST	rtg_Want
 	SF	rtg_WinMode
-	BSR.S	pt_GfxStart
+	BSR.W	pt_GfxStart
 	BRA.W	pt_GfxRefresh
+.no:	RTS
+
+; rtg off with a wide module: the card plays it and the main loop gives it
+; the 8 track view; without the card ask: yes -> play stops, tracks 1-8
+; stay as 8ch module. z=1 go on
+pt_GfxWideAsk:
+	TST.B	wide_On
+	BEQ.S	.go
+	TST.B	agus_On
+	BNE.S	.go
+	LEA	gfx_AskWide(PC),A0
+	JSR	pt_ShowYesNoDialog
+	BNE.S	.r
+	BSR.S	pt_GfxWide8
+.go:	CMP.W	D0,D0			; z=1
+.r:	RTS
+
+; mirror did not come up: without the card keep tracks 1-8
+pt_GfxWideLost:
+	TST.L	rtg_Proc
+	BNE.S	.r
+	TST.B	wide_On
+	BEQ.S	.r
+	TST.B	agus_On
+	BNE.S	.r
+	BSR.S	pt_GfxWide8
+.r:	RTS
+
+pt_GfxWide8:
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	JSR	pt_BtnMainStop
+	JSR	pt_MixStop
+	JSR	pt_WideTo8
+	BSR.W	pt_SndChanDraw
+	LEA	snd_MsgWide8(PC),A0
+	JSR	pt_StatusLater41
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	RTS
 
 ; start mirror process, wait up to 3 s for result
 pt_GfxStart:
@@ -1231,11 +1757,16 @@ pt_GfxRestart:
 	BEQ.S	.r
 	JSR	pt_RtgClose
 	BSR.W	pt_GfxStart
+	BSR.W	pt_GfxWideLost
 .r:	RTS
 
 ; screenmode: next card mode (8 bit, 640 x 480/512), after last -> AUTO
 pt_GfxMode:
-	JSR	pt_WaitMouseRelease
+	TST.B	rtg_WinMode		;41 window: card mode has no say
+	BEQ.S	.ok
+	LEA	gfx_MsgMode(PC),A0
+	JMP	pt_ShowStatusMsg
+.ok:	JSR	pt_WaitMouseRelease
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	MOVEA.L	dat_GfxLibBase,A6
 	MOVE.L	rtg_UserMode,D7
@@ -1258,13 +1789,49 @@ pt_GfxMode:
 .auto:	MOVEQ	#0,D7
 .set:	MOVE.L	D7,rtg_UserMode
 	MOVEM.L	(A7)+,D0-D7/A0-A6
-	BSR.S	pt_GfxRestart
+	BSR.W	pt_GfxRestart
 	BRA.W	pt_GfxRefresh
 
+; aspect: 0 amiga 1:2, $ff pixel 1:1, 2 free (window only)
 pt_GfxScale:
-	NOT.B	rtg_Scale1x
+	BSR.S	pt_GfxScaleCur
+	BEQ.S	.px
+	CMP.B	#2,D0
+	BEQ.S	.am
+	MOVEQ	#2,D0
+	TST.B	rtg_WinMode		;41 free only in the window
+	BNE.S	pt_GfxScaleSet
+.am:	MOVEQ	#0,D0
+	BRA.S	pt_GfxScaleSet
+.px:	MOVEQ	#-1,D0
+	BRA.S	pt_GfxScaleSet
+pt_GfxScaleDn:
+	BSR.S	pt_GfxScaleCur
+	BEQ.S	.fr
+	CMP.B	#2,D0
+	BEQ.S	.px
+	MOVEQ	#0,D0
+	BRA.S	pt_GfxScaleSet
+.fr:	MOVEQ	#2,D0
+	TST.B	rtg_WinMode
+	BNE.S	pt_GfxScaleSet
+.px:	MOVEQ	#-1,D0
+	BRA.S	pt_GfxScaleSet
+
+; aspect as it works: free means amiga on the card screen
+pt_GfxScaleCur:
+	MOVE.B	rtg_Scale1x,D0
+	CMP.B	#2,D0
+	BNE.S	.r
+	TST.B	rtg_WinMode
+	BNE.S	.r
+	MOVEQ	#0,D0
+.r:	TST.B	D0
+	RTS
+pt_GfxScaleSet:
+	MOVE.B	D0,rtg_Scale1x
 	BSR.W	pt_SndWait
-	BSR.S	pt_GfxRestart
+	BSR.W	pt_GfxRestart
 	BRA.W	pt_GfxRefresh
 
 ; fps: 50/25/17/12 = 1..4 vbl per frame (rtg_WaitAdj 0..3, 0 = 50)
@@ -1281,6 +1848,87 @@ pt_GfxFpsSet:
 	BSR.W	pt_SndWait
 	BRA.W	pt_GfxRefresh		; takes effect next frame
 
+; rows: rtg window one pattern row taller/shorter, mirror resizes it
+pt_GfxRowsUp:
+	MOVEQ	#1,D0
+	BRA.S	pt_GfxRows
+pt_GfxRowsDn:
+	MOVEQ	#-1,D0
+pt_GfxRows:
+	TST.L	rtg_Proc
+	BEQ.S	.na
+	TST.B	rtg_WinMode
+	BEQ.S	.na
+	CMPI.B	#2,rtg_Scale1x		; free: window keeps its size
+	BEQ.S	.nf
+	MOVE.B	D0,-(A7)
+	JSR	pt_WaitMouseRelease
+	MOVE.B	(A7)+,D0
+	ADD.B	D0,rtg_RowsReq		; taken by pt_RtgWinSnap
+	BSR.S	pt_GfxRowsVal
+	MOVE.W	D0,gfx_RowsAskV		; pt_GfxPoll: no change = limit
+	MOVE.B	#3,gfx_RowsAsk
+	RTS				; value follows from pt_SetPoll
+.na:	LEA	gfx_MsgRows(PC),A0
+	JMP	pt_ShowStatusMsg
+.nf:	LEA	gfx_MsgRowsFree(PC),A0
+	JMP	pt_ShowStatusMsg
+
+; d0.l = visible pattern rows of the mirror, 0 = off
+pt_GfxRowsVal:
+	MOVEQ	#0,D0
+	TST.L	rtg_Proc
+	BEQ.S	.r
+	TST.B	rtg_WinMode		;41 screen: rows are not yours to set
+	BEQ.S	.r
+	MOVE.W	rtg_OutH,D0
+	SUB.W	#RTG_ROWS,D0
+	BPL.S	.p
+	MOVEQ	#0,D0
+.p:	LSR.W	#3,D0
+	ADD.W	#GFX_ROWS0,D0
+.r:	RTS
+
+GFX_ROWS0	EQU	13		; pattern rows at classic height
+
+; system page tick: redraw when the mirror state or the rows changed
+pt_GfxPoll:
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	TST.B	gfx_RowsAsk
+	BEQ.S	.sg
+	TST.B	rtg_RowsReq		; not taken yet
+	BNE.S	.sg
+	SUBQ.B	#1,gfx_RowsAsk
+	BNE.S	.sg
+	BSR.S	pt_GfxRowsVal
+	CMP.W	gfx_RowsAskV,D0
+	BNE.S	.sg
+	LEA	gfx_MsgLimit(PC),A0
+	JSR	pt_ShowStatusMsg
+.sg:	BSR.S	pt_GfxSig
+	CMP.B	gfx_Sig,D0
+	BNE.S	.dr
+	BSR.S	pt_GfxRowsVal
+	CMP.W	gfx_RowsShown,D0
+	BEQ.S	.r
+.dr:	BSR.S	pt_GfxDraw
+.r:	MOVEM.L	(A7)+,D0-D7/A0-A6
+	RTS
+
+; d0 = rtg state: proc, window, start state
+pt_GfxSig:
+	MOVEQ	#0,D0
+	TST.L	rtg_Proc
+	BEQ.S	.a
+	MOVEQ	#1,D0
+.a:	TST.B	rtg_WinMode
+	BEQ.S	.b
+	ADDQ.B	#2,D0
+.b:	MOVE.B	rtg_ProcState,D1
+	LSL.B	#2,D1
+	OR.B	D1,D0
+	RTS
+
 pt_GfxRefresh:
 	BSR.S	pt_GfxDraw
 	BRA.W	pt_SetStatus
@@ -1288,6 +1936,8 @@ pt_GfxRefresh:
 ; graphics block values (page SYSTEM)
 pt_GfxDraw:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
+	BSR.S	pt_GfxSig
+	MOVE.B	D0,gfx_Sig
 	MOVEA.L	ABSEXECBASE.W,A6
 	BTST	#1,(297,A6)
 	BNE.S	.cpu
@@ -1296,13 +1946,28 @@ pt_GfxDraw:
 	MOVEQ	#SV_RTG_N,D0
 	BSR.W	pt_SetPut
 	MOVE.W	#SV_SCREENMODE_POS,D1
+	MOVEQ	#SV_SCREENMODE_N,D0
 	BSR.W	pt_SetPut
 	MOVE.W	#SV_SCALE_POS,D1
+	MOVEQ	#SV_SCALE_N,D0		; own widths, else arrows and ROWS go
 	BSR.W	pt_SetPut
 	MOVE.W	#SV_FPS_POS,D1
+	MOVEQ	#SV_FPS_N,D0
+	BSR.W	pt_SetPut
+	MOVE.W	#SV_ROWS_POS,D1
+	MOVEQ	#SV_ROWS_N,D0
 	BSR.W	pt_SetPut
 	BRA.W	.r
-.cpu:	LEA	set_Line2,A1
+.cpu:	MOVE.L	rtg_UserMode,D0		;41 mode gone or unfit: AUTO
+	BEQ.S	.uok
+	MOVEA.L	dat_GfxLibBase,A6
+	JSR	pt_RtgModeH
+	CMP.W	#512,D1
+	BEQ.S	.uok
+	CMP.W	#480,D1
+	BEQ.S	.uok
+	CLR.L	rtg_UserMode
+.uok:	LEA	set_Line2,A1
 	CLR.B	(A1)
 	LEA	gfx_TxtOff(PC),A0
 	TST.L	rtg_Proc
@@ -1324,14 +1989,32 @@ pt_GfxDraw:
 	MOVE.W	#SV_RTG_POS,D1
 	MOVEQ	#SV_RTG_N,D0
 	BSR.W	pt_SetPut
+	TST.L	rtg_Proc		; rtg off: its settings have no effect
+	BNE.S	.son
+	LEA	set_TxtNA(PC),A0
+	MOVE.W	#SV_SCREENMODE_POS,D1
+	MOVEQ	#SV_SCREENMODE_N,D0
+	BSR.W	pt_SetPut
+	MOVE.W	#SV_SCALE_POS,D1
+	MOVEQ	#SV_SCALE_N,D0
+	BSR.W	pt_SetPut
+	MOVE.W	#SV_FPS_POS,D1
+	MOVEQ	#SV_FPS_N,D0
+	BSR.W	pt_SetPut
+	BRA.W	.rows
+.son:	TST.B	rtg_WinMode		;41 window: no card mode choice
+	BEQ.S	.son1
+	LEA	set_TxtNA(PC),A0
+	BRA.W	.sm
+.son1:
 ; screenmode: name of chosen / running mode
 	LEA	gfx_TxtAuto(PC),A0
 	MOVE.L	rtg_UserMode,D2
 	BNE.S	.nm
 	TST.L	rtg_Proc
-	BEQ.S	.sm
+	BEQ.W	.sm
 	MOVE.L	rtg_Mode,D2		; AUTO running: name found mode
-	BEQ.S	.sm
+	BEQ.W	.sm
 .nm:	MOVEA.L	dat_GfxLibBase,A6
 	SUBA.L	A0,A0
 	LEA	rtg_DimBuf,A1
@@ -1367,9 +2050,12 @@ pt_GfxDraw:
 	MOVEQ	#SV_SCREENMODE_N,D0
 	BSR.W	pt_SetPut
 	LEA	gfx_Txt2x(PC),A0
-	TST.B	rtg_Scale1x
+	BSR.W	pt_GfxScaleCur
 	BEQ.S	.sc
 	LEA	gfx_Txt1x(PC),A0
+	CMP.B	#2,D0
+	BNE.S	.sc
+	LEA	gfx_TxtFree(PC),A0
 .sc:	MOVE.W	#SV_SCALE_POS,D1
 	MOVEQ	#SV_SCALE_N,D0
 	BSR.W	pt_SetPut
@@ -1380,6 +2066,17 @@ pt_GfxDraw:
 	ADDA.W	D0,A0
 	MOVE.W	#SV_FPS_POS,D1
 	MOVEQ	#SV_FPS_N,D0
+	BSR.W	pt_SetPut
+.rows:	BSR.W	pt_GfxRowsVal
+	MOVE.W	D0,gfx_RowsShown
+	LEA	set_TxtNA(PC),A0
+	TST.L	D0
+	BEQ.S	.rw
+	LEA	set_Line2,A0
+	BSR.W	pt_SetFmtNum
+	LEA	set_Line2,A0
+.rw:	MOVE.W	#SV_ROWS_POS,D1
+	MOVEQ	#SV_ROWS_N,D0
 	BSR.W	pt_SetPut
 .r:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
@@ -1392,18 +2089,41 @@ gfx_TxtNoMode:	DC.B	"OFF - NO CARD MODE",0
 gfx_TxtAuto:	DC.B	"AUTO",0
 gfx_TxtAuto2:	DC.B	"AUTO: ",0
 gfx_TxtCard:	DC.B	"CARD MODE",0
-gfx_Txt2x:	DC.B	"2X (640X512 MODES)",0
-gfx_Txt1x:	DC.B	"1X CENTERED",0
+gfx_Txt2x:	DC.B	"AMIGA 1:2",0
+gfx_Txt1x:	DC.B	"PIXEL 1:1",0
+gfx_TxtFree:	DC.B	"FREE (WINDOW)",0
 gfx_TxtFps:	DC.B	"50 FPS",0,0,"25 FPS",0,0,"17 FPS",0,0,"12 FPS",0,0
+gfx_MsgRows:	DC.B	"ROWS: ONLY IN THE RTG WINDOW",0
+gfx_MsgRowsFree:	DC.B	"ROWS: ASPECT FREE, SIZE THE WINDOW",0
+gfx_MsgLimit:	DC.B	"ROWS: AT THE LIMIT",0
+gfx_MsgMode:	DC.B	"SCREENMODE: ONLY ON THE RTG SCREEN",0
+gfx_MsgNoWin:	DC.B	"NO WINDOW: WB NOT ON A CARD",0
+	DC.B	"NO WINDOW: WB TOO SMALL",0
+	DC.B	"NO WINDOW: COULD NOT OPEN",0
+	DC.B	"NO WINDOW: WB NEEDS 16 BIT",0
+gfx_MsgOff:	DC.B	"SWITCH RTG ON FIRST",0
+gfx_AskWide:	DC.B	10,10
+	DC.B	"   Without RTG only",10
+	DC.B	" tracks 1-8 stay. Switch?",0
+prf_MsgNoSave:	DC.B	"CAN'T SAVE PT41.PREFS (WRITE PROTECTED?)",0
 	EVEN
 
 ;--- prefs
-; PROGDIR:PT41.prefs = IFF "FORM PT41", chunk "SET1" (16 bytes, ver 1):
-;   +0 output (snd_Choice 0/1/2)  +1 vol reduction  +2 stereo reduction
-;   +3 rtg (0 off, $ff scr, 2 win)  +4 ahi mode (L)  +8 card mode (L,0=AUTO)
-;   +12 scale 1X  +13 fps ofs  +14 scheme (0=4.1 1=2.3)  +15 chs (4/8)
-; read at start (before sound opens), SAVE CONFIG writes; rate: PT.config
-PREFS_LEN	EQU	12+8+16
+; PROGDIR:PT41.prefs = IFF "FORM PT41", chunk "SET1" (28 bytes):
+;   +0 output (0 auto, 1 paula, 2 ahi, 3 amigus)  +1 vol  +2 stereo
+;   +3 rtg (0 off, $ff scr, 2 win)  +4 ahi mode (L)
+;   +8 card mode (L, 0 = AUTO)  +12 aspect (0 amiga, $ff pixel, 2 free)
+;   +13 fps ofs  +14 scheme (0 = 4.1, 1 = 2.3)  +15 chs (4/8)
+;   +16 window left, top, inner w, h (words, 0 = default)
+;   +24 note range (0 pt, $ff ext)  +25 midi (0 off, 1 all, 2..17 ch)
+;   +26 on load (0 auto, $ff keep)  +27 ahi flt (0 off, 1 a1200, 2 a500)
+; older files (16 or 24 byte chunk) still load
+; read at start (before sound opens), SAVE CONFIG writes
+; vol, stereo: reduction steps; mix rate lives in PT.config
+PREFS_LEN	EQU	12+8+28
+PREFS_BOX	EQU	12+8+24
+PREFS_OLD	EQU	12+8+16
+PREFS_MAX	EQU	64		; read: known part of longer files
 
 pt_PrefsLoad41:
 	TST.B	prf_Loaded
@@ -1418,14 +2138,14 @@ pt_PrefsLoad41:
 	BEQ.W	.x
 	MOVE.L	D7,D1
 	MOVE.L	#prf_Buf,D2
-	MOVEQ	#PREFS_LEN,D3
+	MOVEQ	#PREFS_MAX,D3
 	JSR	(-42,A6)
 	MOVE.L	D0,D6
 	MOVE.L	D7,D1
 	JSR	(-36,A6)
-	CMP.L	#PREFS_LEN,D6
-	BNE.W	.x
-	LEA	prf_Buf,A0
+	CMP.L	#PREFS_OLD,D6		; shorter: nothing usable
+	BLT.W	.x
+.len:	LEA	prf_Buf,A0
 	CMPI.L	#'FORM',(A0)
 	BNE.W	.x
 	CMPI.L	#'PT41',8(A0)
@@ -1434,7 +2154,7 @@ pt_PrefsLoad41:
 	BNE.W	.x
 	LEA	20(A0),A0
 	MOVE.B	(A0)+,D0
-	CMP.B	#2,D0
+	CMP.B	#3,D0			; 3 = amigus (taken in pt_SetPoll)
 	BHI.W	.x
 	MOVE.B	D0,snd_Choice
 	MOVE.B	(A0)+,D0
@@ -1453,22 +2173,46 @@ pt_PrefsLoad41:
 	MOVE.B	#1,rtg_WinMode
 .rt:	MOVE.L	(A0)+,snd_AhiMode
 	MOVE.L	(A0)+,rtg_UserMode
-	MOVE.B	(A0)+,rtg_Scale1x
+	MOVE.B	(A0)+,D0		;41 aspect: 0, -1 or 2
+	BEQ.S	.sc1
+	CMP.B	#-1,D0
+	BEQ.S	.sc1
+	CMP.B	#2,D0
+	BEQ.S	.sc1
+	MOVEQ	#0,D0
+.sc1:	MOVE.B	D0,rtg_Scale1x
 	MOVE.B	(A0)+,D0
 	CMP.B	#-1,D0
-	BLT.S	.x
+	BLT.S	.sch			; bad fps: keep, read on
 	CMP.B	#3,D0
-	BGT.S	.x
+	BGT.S	.sch
 	TST.B	D0			; old prefs: -1 was the fastest
 	BPL.S	.fps
 	MOVEQ	#0,D0
 .fps:	MOVE.B	D0,rtg_WaitAdj
-	MOVE.B	(A0)+,D0		; scheme
+.sch:	MOVE.B	(A0)+,D0		; scheme
 	CMP.B	#1,D0
 	BHI.S	.f
 	MOVE.B	D0,sch_Scheme
 .f:	MOVE.B	(A0)+,prf_Chan		; ch cnt (4/8, 0 = unset)
-	ST	prf_Found		; saved prefs present -> no auto setup
+	CMP.L	#PREFS_BOX,D6		; fields as far as the file goes
+	BLT.S	.nobox
+	MOVE.L	(A0)+,prf_WinBox
+	MOVE.L	(A0)+,prf_WinBox+4
+	CMP.L	#PREFS_LEN,D6
+	BLT.S	.nobox
+	MOVE.B	(A0)+,note_Ext41
+	MOVE.B	(A0)+,D0
+	CMP.B	#17,D0
+	BHI.S	.nobox
+	MOVE.B	D0,mid_Sel
+	BSR.W	pt_MidiApply
+	MOVE.B	(A0)+,prf_LoadKeep	; older files: 0 = auto
+	MOVE.B	(A0)+,D0
+	CMP.B	#2,D0
+	BHI.S	.nobox
+	MOVE.B	D0,ahi_FltMode
+.nobox:	ST	prf_Found		; saved prefs present -> no auto setup
 .x:	MOVEM.L	(A7)+,D0-D7/A0-A6
 .r:	RTS
 
@@ -1480,7 +2224,7 @@ pt_PrefsSave41:
 	MOVE.L	#PREFS_LEN-8,(A0)+
 	MOVE.L	#'PT41',(A0)+
 	MOVE.L	#'SET1',(A0)+
-	MOVE.L	#16,(A0)+
+	MOVE.L	#PREFS_LEN-20,(A0)+
 	MOVEQ	#0,D0
 	TST.B	snd_Choice
 	BEQ.S	.c
@@ -1488,7 +2232,13 @@ pt_PrefsSave41:
 	TST.B	ahi_Active
 	BEQ.S	.c
 	MOVEQ	#2,D0
-.c:	MOVE.B	D0,(A0)+
+.c:	TST.B	agus_On
+	BEQ.S	.c2
+	MOVEQ	#3,D0
+.c2:	TST.B	prf_AgusKeep		; amigus saved, card missing or busy
+	BEQ.S	.c3
+	MOVEQ	#3,D0
+.c3:	MOVE.B	D0,(A0)+
 	MOVE.B	snd_VolDown,(A0)+
 	MOVE.B	snd_StereoDown,(A0)+
 	TST.L	rtg_Proc		; rtg running = $ff, 2 = window
@@ -1504,24 +2254,36 @@ pt_PrefsSave41:
 	MOVE.B	rtg_WaitAdj,(A0)+
 	MOVE.B	sch_Scheme,(A0)+
 	MOVEQ	#8,D0			; ch cnt (dat_ModeFlags bit 5 = 4ch)
+	TST.B	wide_On			; wide module in the rtg 4 track view: 8
+	BNE.S	.c8
 	BTST	#5,dat_ModeFlags
 	BEQ.S	.c8
 	MOVEQ	#4,D0
 .c8:	MOVE.B	D0,(A0)+
+	JSR	pt_RtgWinBox		; window running: its place and size
+	MOVE.L	prf_WinBox,(A0)+
+	MOVE.L	prf_WinBox+4,(A0)+
+	MOVE.B	note_Ext41,(A0)+
+	MOVE.B	mid_Sel,(A0)+
+	MOVE.B	prf_LoadKeep,(A0)+	; 0 auto, $ff keep
+	MOVE.B	ahi_FltMode,(A0)+
 	MOVEA.L	dat_DosLibBase,A6
 	MOVE.L	#prf_Name,D1
 	MOVE.L	#1006,D2
 	JSR	(-30,A6)
 	MOVE.L	D0,D7
-	BEQ.S	.x
+	BEQ.S	.no
 	MOVE.L	D7,D1
 	MOVE.L	#prf_Buf,D2
 	MOVEQ	#PREFS_LEN,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	D7,D1
-	JSR	(-36,A6)
+	JSR	pt_CloseQuiet41
 .x:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	JMP	pt_ClearStatusMsg
+.no:	LEA	prf_MsgNoSave(PC),A0	; read-only drawer, cd, protected disk
+	JSR	pt_StatusLater41
+	BRA.S	.x
 
 ; replaces MOVEA.L dat_GfxLibBase,A0 in pt_0716 (start, RESET ALL)
 pt_PrefsReset41:
@@ -1534,7 +2296,17 @@ pt_PrefsReset41:
 	MOVE.L	D0,D1
 	CLR.B	snd_VolDown
 	CLR.B	snd_StereoDown
-	CLR.B	sch_Scheme		; RESET ALL loads default palette -> scheme 4.1
+	SF	prf_LoadKeep		; ON LOAD: AUTO
+	CLR.B	ahi_FltMode
+	JSR	pt_CardFltReset41
+	CLR.B	note_Ext41
+	CLR.B	mid_Sel
+	BSR.W	pt_MidiApply
+	BCLR	#5,dat_ModeFlags	; default config set the 4ch bit without the
+	CMPI.W	#4,dat_RpNumChannels	; switch: keep the mode that runs (channels
+	BNE.S	.ch			; live in PT41.prefs; LOAD CONFIG switches)
+	BSET	#5,dat_ModeFlags
+.ch:	CLR.B	sch_Scheme		; RESET ALL loads default palette -> scheme 4.1
 	CLR.B	rtg_Scale1x
 	CLR.B	rtg_WaitAdj
 	CLR.L	rtg_UserMode
@@ -1560,8 +2332,9 @@ prf_Name:	DC.B	"PROGDIR:PT41.prefs",0
 	EVEN
 
 ;--- first run auto setup
-; no prefs/tooltype/switch file: ahi if the default mode works and is not
-; paula's, rtg mirror if a card mode exists; status "AUTO SETUP: ..."
+; no prefs/tooltype/switch file: amigus card first (native, even if ahi
+; points to it), else ahi if the default mode works and is not paula's,
+; else paula; rtg mirror if a card mode exists; status "AUTO SETUP: ..."
 
 ; from pt_AhiAudioDevOpen (before pt_AhiDetect)
 pt_AutoAhi:
@@ -1572,8 +2345,17 @@ pt_AutoAhi:
 	BNE.W	.r
 	TST.B	snd_Choice
 	BNE.W	.r
-	MOVEA.L	ABSEXECBASE.W,A6
-	BTST	#1,(297,A6)
+	IFD	FAKEAGUSBOOT
+	ST	dbg_FakeAgus		;41 test: card present before the auto setup
+	ENDC
+	JSR	pt_AgusDetect		;41 card needs no 68020, taken like saved output amigus
+	TST.L	agus_Card
+	BEQ.S	.noag
+	MOVE.B	#3,snd_Choice
+	ST	prf_AutoAgus
+	BRA.W	.r
+.noag:	MOVEA.L	ABSEXECBASE.W,A6
+	BTST	#1,(297,A6)		;41 ahi needs a 68020
 	BEQ.W	.r
 ; read ENV:Sys/ahi.prefs without dos requester (pr_WindowPtr not -1 yet)
 	SUBA.L	A1,A1
@@ -1745,9 +2527,17 @@ pt_AutoMsg:
 	ST	prf_MsgDone
 	MOVE.B	prf_AutoAhi,D0
 	OR.B	prf_AutoRtg,D0
+	OR.B	prf_AutoAgus,D0
 	BEQ.S	.r
 	MOVEM.L	D0-D1/A0-A1,-(A7)
-	LEA	aut_MsgBoth(PC),A0
+	TST.B	prf_AutoAgus
+	BEQ.S	.ahi
+	LEA	aut_MsgAgusR(PC),A0
+	TST.B	prf_AutoRtg
+	BNE.S	.show
+	LEA	aut_MsgAgus(PC),A0
+	BRA.S	.show
+.ahi:	LEA	aut_MsgBoth(PC),A0
 	TST.B	prf_AutoAhi
 	BEQ.S	.rtg
 	TST.B	prf_AutoRtg
@@ -1767,6 +2557,8 @@ aut_MsgBoth:	DC.B	"AUTO SETUP: AHI + RTG",0
 aut_MsgAhi:	DC.B	"AUTO SETUP: AHI SOUND CARD",0
 aut_MsgRtg:	DC.B	"AUTO SETUP: RTG SCREEN",0
 aut_MsgRtgW:	DC.B	"AUTO SETUP: RTG WINDOW",0
+aut_MsgAgus:	DC.B	"AUTO SETUP: AMIGUS SOUND CARD",0
+aut_MsgAgusR:	DC.B	"AUTO SETUP: AMIGUS + RTG",0
 aut_CgxName:	DC.B	"cybergraphics.library",0
 aut_HintAuto:	DC.B	"AUTO SETUP - SAVE CONFIG TO KEEP IT",0
 	EVEN
@@ -1926,6 +2718,96 @@ pt_SchDefSrc:
 .r:	RTS
 
 ; design value (page SYSTEM)
+; notes: PT = c-1..b-3 as ever, EXT = octave 4 on the keys above b-3
+; (f2), 1xx/2xx/3xx up to b-4/c-0
+pt_NoteGadget:
+	JSR	pt_WaitMouseRelease
+	NOT.B	note_Ext41
+	LEA	note_MsgPt(PC),A0
+	TST.B	note_Ext41
+	BEQ.S	.m
+	LEA	note_MsgExt(PC),A0
+.m:	JSR	pt_ShowStatusMsg
+pt_NoteDraw:
+	MOVEM.L	D0-D1/A0,-(A7)
+	LEA	note_TxtPt(PC),A0
+	TST.B	note_Ext41
+	BEQ.S	.d
+	LEA	note_TxtExt(PC),A0
+.d:	MOVE.W	#SV_NOTES_POS,D1
+	MOVEQ	#SV_NOTES_N,D0
+	BSR.W	pt_SetPut
+	MOVEM.L	(A7)+,D0-D1/A0
+	RTS
+;--- midi in: off / all channels / channel 1-16
+pt_MidiUp:
+	MOVEQ	#1,D0
+	BRA.S	pt_MidiStep
+pt_MidiDn:
+	MOVEQ	#-1,D0
+pt_MidiStep:
+	ADD.B	mid_Sel,D0
+	BPL.S	.lo
+	MOVEQ	#0,D0
+.lo:	CMP.B	#17,D0
+	BLS.S	.hi
+	MOVEQ	#17,D0
+.hi:	MOVE.B	D0,mid_Sel
+	BSR.S	pt_MidiApply
+	BSR.W	pt_SndWait
+	BRA.S	pt_MidiDraw
+
+; mid_Sel -> port on/off; in use: message, off
+pt_MidiApply:
+	MOVEM.L	D0/A0,-(A7)
+	MOVE.B	mid_Sel,D0
+	BNE.S	.on
+	JSR	pt_MidiOff
+	BRA.S	.r
+.on:	SUBQ.B	#1,D0
+	MOVE.B	D0,mid_Chan
+	JSR	pt_MidiOn
+	TST.L	D0
+	BEQ.S	.r
+	CLR.B	mid_Sel
+	LEA	mid_MsgBusy(PC),A0
+	JSR	pt_ShowStatusMsg
+.r:	MOVEM.L	(A7)+,D0/A0
+	RTS
+
+pt_MidiDraw:
+	MOVEM.L	D0-D1/A0-A1,-(A7)
+	LEA	mid_TxtOff(PC),A0
+	MOVEQ	#0,D0
+	MOVE.B	mid_Sel,D0
+	BEQ.S	.d
+	LEA	mid_TxtAll(PC),A0
+	SUBQ.B	#1,D0
+	BEQ.S	.d
+	LEA	set_Line2,A1
+	CLR.B	(A1)
+	LEA	mid_TxtCh(PC),A0
+	BSR.W	pt_SetCat
+	MOVEA.L	A1,A0
+	BSR.W	pt_SetFmtNum
+	LEA	set_Line2,A0
+.d:	MOVE.W	#SV_MIDI_POS,D1
+	MOVEQ	#SV_MIDI_N,D0
+	BSR.W	pt_SetPut
+	MOVEM.L	(A7)+,D0-D1/A0-A1
+	RTS
+mid_TxtOff:	DC.B	"OFF",0
+mid_TxtAll:	DC.B	"ALL",0
+mid_TxtCh:	DC.B	"CH",0
+mid_MsgBusy:	DC.B	"MIDI: SERIAL PORT IN USE",0
+	EVEN
+
+note_TxtPt:	DC.B	"PT",0
+note_TxtExt:	DC.B	"EXT",0
+note_MsgPt:	DC.B	"NOTES C-1..B-3 (STANDARD)",0
+note_MsgExt:	DC.B	"NOTES C-0..B-4 (EXTENDED)",0
+	EVEN
+
 pt_SchDraw:
 	MOVEM.L	D0-D1/A0,-(A7)
 	LEA	sch_Txt41(PC),A0

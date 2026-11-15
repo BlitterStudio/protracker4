@@ -1,3 +1,4 @@
+; dual licence: pt terms or MIT, see LICENSE
 ; software mixer for 8ch: voices n and n+4 share paula ch n
 ; mixed pair: sum into ring paula loops; direct pairs stay on dma
 	INCLUDE	"src/sys/x20.i"		; 020 area
@@ -6,6 +7,7 @@
 ; 020 insns only in pt_MixTickSoft and below (mix_Enabled)
 
 PAULA_CLOCK	EQU	3546895		; PAL
+MIX_MINPER	EQU	55		; clock/per << 16 fits 32 bit
 ECLOCK		EQU	709379
 
 ; hooks (68000)
@@ -27,9 +29,17 @@ pt_MixMusicEntry:
 .irq:	MOVEA.L	(A7)+,A0
 	MOVE.L	#pt_MixTickExit,(A7)	; irq call: do nothing (restore regs, ret)
 	RTS
-.live:	TST.B	mix_Enabled
+.live:	TST.B	agus_On			;41 card: did this tick start late?
+	BEQ.S	.nolate
+	JSR	pt_AgusStamp
+.nolate:
+	TST.B	snd_Switch		; output changes hands: no start, no stop
+	BNE.S	.mode
+	TST.B	mix_Enabled
+	BNE.S	.en
+	TST.B	agus_On			; card output: no mixing, any cpu
 	BEQ.S	.mode
-	TST.B	mix_Active
+.en:	TST.B	mix_Active
 	BEQ.S	.inactive
 	BSR.W	pt_MixWanted		; left 8ch and no ahi -> mixer off
 	BNE.S	.mode
@@ -91,7 +101,10 @@ pt_MixLoopInit:
 	SUBQ.W	#1,D7
 	MOVE.L	#mix_AudPtrTable,mix_AudPtrCur
 	MOVEA.L	mix_AudPtrTable,A5
-	RTS
+	TST.B	wide_On			; wide module: 32 channels
+	BEQ.S	.r
+	JSR	pt_WideLoop
+.r:	RTS
 
 ; replaces lea (aud_SIZEOF,a5),a5 / lea (n_SIZEOF,a6),a6 (8 b)
 pt_MixNextVoice:
@@ -115,8 +128,19 @@ pt_MixTickExit:
 	ENDC
 	TST.B	mix_Active
 	BEQ.S	.out
-	BSR.W	pt_MixGuardRing		; guard ring ch each tick (vol 64, no audio irq, masks 0)
-	ADDQ.W	#1,mix_TicksDue
+	TST.B	snd_Switch		; output changes hands
+	BNE.S	.out
+	TST.B	ahi_Active		; ahi: time since it asked for a half
+	BEQ.S	.nah
+	CMPI.W	#$7fff,ahi_Ticks
+	BCC.S	.nah
+	ADDQ.W	#1,ahi_Ticks
+.nah:	BSR.W	pt_MixGuardRing		; guard ring ch each tick (vol, per, no audio irq, masks 0)
+	TST.B	agus_On			; card output: voices to the card now
+	BEQ.S	.mix
+	JSR	pt_AgusRun
+	BRA.S	.out
+.mix:	ADDQ.W	#1,mix_TicksDue
 	MOVE.L	$DFF004,D0		; tick line (pt_MixRingRestart compensates softint delay)
 	LSR.L	#8,D0
 	AND.W	#$1ff,D0
@@ -142,8 +166,17 @@ pt_MixTickExit:
 pt_MixExitHook:
 	JSR	pt_CheckFileLock		; orig
 	JSR	pt_AhiClose		; ahi close
+	DK	'1'
 	JSR	pt_RtgClose		; end rtg task
+	DK	'2'
 	JSR	pt_FltFree41		; free filter editor try-it backup
+	JSR	pt_MidiOff		; serial port back
+	DK	'3'
+	JSR	pt_AgusClose
+	DK	'4'
+	JSR	pt_WideFree
+	JSR	pt_Exe8Free		; save exe buffer
+	DK	'5'
 	MOVE.L	x20_Base,D0		; free 020 area (after rtg task, which uses it)
 	BEQ.S	.nox20
 	MOVEA.L	D0,A1
@@ -226,8 +259,25 @@ pt_MixTaskPoll:
 	MOVE.L	#-1,(184,A0)
 .nowin:
 	BSR.W	pt_AhiPoll		; ahi output: open, collect requests, send block
+	TST.B	wide_MsgPend		; wide module loaded -> report once
+	BEQ.S	.nowm
+	SF	wide_MsgPend
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	LEA	wide_MsgOn,A0
+	JSR	pt_ShowStatusMsg
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+.nowm:	TST.B	agus_On			; card output: changed samples over
+	BEQ.S	.noag
+	ADDQ.B	#1,agus_SyncCnt
+	CMPI.B	#10,agus_SyncCnt
+	BCS.S	.noag
+	CLR.B	agus_SyncCnt
+	JSR	pt_AgusSync
+.noag:
 	JSR	pt_RtgPoll		; rtg mirror start once
 	JSR	pt_SetPoll		; setup page status lines
+	JSR	pt_StatusPoll41		; status line marquee
+	JSR	pt_ChgPoll41
 	IFD	DEBUGAUTO
 	CMPI.B	#2,dbg_WdDone		; wd line pending -> show here
 	BNE.S	.nowd
@@ -243,9 +293,14 @@ pt_MixTaskPoll:
 	TST.B	mix_Active		; set smp mem class continuously (pt_BtnSetupUndynMod writes chip back)
 	BEQ.S	.nofast
 	TST.B	mix_Is68k		; 68000: v1/2 on dma -> smp stay in chip
-	BNE.S	.nofast
+	BNE.S	.chk
 	MOVE.L	#$00010001,dat_DiskOpViewMode
-.nofast:
+	ST	smp_ChipDue		; paula later: to chip first
+	BRA.S	.chk
+.nofast:	BSR.W	pt_MixWanted		; restart is due: samples stay
+	BNE.S	.chk
+	JSR	pt_SmpChip41		; paula plays them itself
+.chk:
 	BSR.W	pt_MixRatePoll		; rmb on CHANNELS (setup) picks mix rate
 	TST.B	smp_MsgPending		; wav/aiff loaded -> report format
 	BEQ.S	.nosmp
@@ -286,6 +341,8 @@ pt_MixTaskPoll:
 	CMP.W	#8,D0
 	BNE.S	.nohint
 	TST.B	mix_Enabled
+	BNE.S	.nohint
+	TST.B	agus_On			; card plays 8ch on any cpu
 	BNE.S	.nohint
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	LEA	mix_Hint68kText(PC),A0
@@ -439,7 +496,8 @@ pt_MixApplyRate:
 	CMP.L	#8000,dat_CpuBench
 	BCS.S	.set
 	MOVE.W	#28604,D1
-.set:	BSR.W	pt_MixSetRate
+.set:	JSR	pt_SndAhiFit41		; ahi: into the mode range
+	BSR.W	pt_MixSetRate
 	MOVEM.L	(A7)+,D0-D1/A0
 	RTS
 
@@ -455,6 +513,7 @@ pt_MixSetRate:
 	ADD.L	D1,D0			; + rate/2: round
 	MOVE.L	D2,D1
 	BSR.W	pt_MixDiv32
+	JSR	pt_SndPerMin41		; paula: per >= 124
 	MOVE.W	D0,mix_Period
 	MOVE.L	D0,D2
 	MOVE.L	#PAULA_CLOCK,D0
@@ -464,7 +523,10 @@ pt_MixSetRate:
 	MOVE.L	D2,D1
 	BSR.W	pt_MixDiv32
 	MOVE.W	D0,mix_Rate
-	MOVEM.L	(A7)+,D0-D2
+	JSR	pt_SndAhiOut41		; ahi plays the ring: no paula period,
+	BEQ.S	.r			; the rate exact (what ahi was told)
+	MOVE.W	6(A7),mix_Rate
+.r:	MOVEM.L	(A7)+,D0-D2
 	RTS
 mix_RateTab:	DC.W	0,14000,22050,28604
 
@@ -479,6 +541,8 @@ pt_MixRatePoll:
 	MOVE.W	dat_EditDigitValue,D0	; mouse x
 	CMP.W	#420,D0
 	BCS.W	.r
+	CMP.W	#529,D0			; CHANNELS half (ON LOAD right of it)
+	BHI.W	.r
 	MOVE.W	dat_PalEdSelectPos,D0	; mouse y
 	CMP.W	#33,D0
 	BCS.W	.r
@@ -489,6 +553,10 @@ pt_MixRatePoll:
 	BNE.S	.r			; 4ch: nothing
 	TST.B	mix_Enabled
 	BEQ.S	.r
+	TST.B	agus_On			; card, ahi: setup MIX RATE only
+	BNE.S	.r
+	TST.B	ahi_Active
+	BNE.S	.r
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	ADDQ.B	#1,mix_RateSel
 	CMPI.B	#3,mix_RateSel
@@ -524,8 +592,18 @@ pt_MixSetupText:
 	LEA	dat_0693,A0		; "4CHN8CHN", orig picks with d0 = 0/4
 	MOVEQ	#0,D0
 	BTST	#5,dat_ModeFlags
-	BNE.S	.r			; 4ch
-	MOVEQ	#4,D0			; "8CHN" (caller: lea (0,a0,d0.w))
+	BEQ.S	.m8
+	JMP	pt_WideChText41		; 4ch, or a wide module in it
+.m8:	MOVEQ	#4,D0			; "8CHN" (caller: lea (0,a0,d0.w))
+	TST.B	wide_On			; wide module in the 8 view: "28CH"
+	BEQ.S	.t8
+	JSR	pt_WideChText41
+	SUBQ.L	#4,A0			; caller adds 4 in 8ch
+	RTS
+.t8:	JSR	pt_TrkChanText41
+	BNE.S	.r
+	TST.B	agus_On			; card: no mixing rate here
+	BNE.S	.r
 	TST.B	mix_Enabled
 	BEQ.S	.r
 	TST.B	mix_Is68k		; 68000 shows "8CHN" (rate in MIX RATE)
@@ -570,18 +648,22 @@ pt_MixStart:
 	BSR.W	pt_MixWanted		; 8ch or ahi (ahi: 4ch via mixer too)
 	BEQ.W	.nopairs
 	MOVE.B	#$0f,mix_PairMask	; 8ch: all 4 pairs, silent pairs cost nothing
+	TST.B	agus_On			; card output: all voices, no ring
+	BNE.S	.p4
 	TST.B	mix_Is68k		; 68000 mixes paula 2/3 only, v1/2 direct
 	BEQ.S	.p4
 	MOVE.B	#$0c,mix_PairMask
-.p4:
+.p4:	TST.B	agus_On
+	BNE.S	.nring
 	; ring must exist (pt_MixInitTask), else no mixing
 	TST.L	mix_Ring
 	BEQ.W	.nopairs
 	; clear ring
 	JSR	pt_MixRingClear		; 68000: rings of ch 2/3 only
+.nring:
 	BSR.W	pt_MixCalcSpt
 	; lead
-	BSR.W	pt_MixLeadSpt		; lead (2 ticks, a500 mode 6)
+	BSR.W	pt_MixLeadSpt		; lead (2 ticks, a500 mode 8)
 	SWAP	D0
 	MOVEQ	#0,D1
 	MOVE.W	D0,D1
@@ -627,6 +709,8 @@ pt_MixStart:
 	; paula ch -> ring (not if ahi outputs and paula isn't pt's)
 	TST.B	ahi_NoPaula
 	BNE.S	.pnext
+	TST.B	agus_On			; card output: paula stays off
+	BNE.S	.pnext
 	MOVE.L	mix_Ring,D0
 	MOVE.W	D2,D1
 	MULU	#MIX_RING,D1
@@ -656,12 +740,20 @@ pt_MixStart:
 	ADDQ.W	#1,D2
 	CMP.W	#4,D2
 	BNE.W	.pair
+	TST.B	wide_On
+	BEQ.S	.nw
+	JSR	pt_WideMixStart
+.nw:	TST.B	agus_On
+	BNE.S	.nod
 	TST.B	mix_Is68k		; v1/2 output delayed (in step with ring)
 	BEQ.S	.nod
 	JSR	pt_Mix68DirectInit
 .nod:	ST	mix_Active
+	TST.B	agus_On			; card output: smp may go fast
+	BNE.S	.fastsmp
 	TST.B	mix_Is68k		; 68000: v1/2 on dma, smp stay in chip
 	BNE.S	.chipsmp
+.fastsmp:
 	MOVE.L	#$00010001,dat_DiskOpViewMode	; all mixed: smp may go fast (MEMF_PUBLIC|MEMF_CLEAR)
 .chipsmp:
 	; mixed ch audio irq off + ack: stale INTENA would call pt_RpAudInt
@@ -672,12 +764,16 @@ pt_MixStart:
 	LSL.W	#7,D0			; bit n -> INTB_AUD0+n
 	MOVE.W	D0,INTENA
 	MOVE.W	D0,INTREQ
+	TST.B	agus_On			; card plays the voices -> paula silent
+	BNE.S	.mute
 	TST.B	ahi_Active		; ahi plays ring -> no paula dma, vol 0
 	BEQ.S	.dma
+.mute:
 	MOVE.L	mix_WriteInt,ahi_ReadPos
 	BSR.W	pt_AhiPaulaMute
 	RTS
-.dma:	OR.W	#$8000,D4
+.dma:	MOVE.W	#$00ff,$DFF09E		; adkcon: no modulation
+	OR.W	#$8000,D4
 	MOVE.W	D4,DMACON
 	RTS
 .nohw:	MOVE.L	mix_WriteInt,ahi_ReadPos
@@ -773,22 +869,25 @@ dbg_StopPb:
 	RTS
 	ENDC
 
-; d0 = lead in smp (16.16) = mix_Spt * ticks (2, a500 mode 6)
+; d0 = lead in smp (16.16) = mix_Spt * ticks (2, a500 mode 8)
 ; v1/2 follow via pt_Mix68DirectTick
 pt_MixLeadSpt:
 	MOVE.L	mix_Spt,D0
 	ADD.L	D0,D0
 	TST.B	mix68_Slow
 	BEQ.S	.r
-	MOVE.L	D0,-(A7)
 	ADD.L	D0,D0
-	ADD.L	(A7)+,D0
+	ADD.L	D0,D0
 .r:	RTS
 
 pt_MixStop:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	SF	mix_Active		; first, else softint could restart the ring between dma off and end
 	SF	mix68_DOn		; restart via pt_MixRingRestart (task call, e.g. rate change)
+	TST.B	agus_On			; card voices stop with the mixer
+	BEQ.S	.nag
+	JSR	pt_AgusVoicesOff
+.nag:
 	TST.B	ahi_NoPaula		; ahi owns paula -> reset state only
 	BNE.W	.ahistop
 	MOVE.L	#$00010002,dat_DiskOpViewMode	; back: smp in chip
@@ -824,13 +923,13 @@ pt_MixStop:
 ; mix mode: ring is silent itself, untouched
 pt_StopSilence:
 	CLR.B	dat_KeyCode
-	CLR.B	dat_Channel5+n_volume
-	CLR.B	dat_Channel5+1*n_SIZEOF+n_volume
-	CLR.B	dat_Channel5+2*n_SIZEOF+n_volume
-	CLR.B	dat_Channel5+3*n_SIZEOF+n_volume
+	BSR.W	pt_StopTrig41		; no note start left for the next tick
 	BSR.W	pt_Mix68DirectFlush	; v1/2 silent after stop
-	BSR.W	pt_MixVoicesOff		; else looped smp keep ringing in the mix
-	TST.B	mix_Active
+	JSR	pt_AgusWideSilence
+	TST.B	agus_On			; card voices off now, not at a tick
+	BEQ.S	.nag
+	JSR	pt_AgusVoicesOff
+.nag:	TST.B	mix_Active
 	BNE.S	.r
 	TST.B	ahi_NoPaula		; ahi owns paula
 	BNE.S	.r
@@ -853,6 +952,30 @@ pt_StopSilence:
 	MOVEM.L	(A7)+,D0-D1/A0-A1
 .r:	RTS
 
+; stop: channels 1-8 vol 0, note starts not yet taken by the mixer or
+; the card dropped, mixer voices off; one block against the tick
+pt_StopTrig41:
+	MOVEM.L	D0-D1/A0-A1/A6,-(A7)
+	MOVEA.L	ABSEXECBASE.W,A6
+	JSR	(-120,A6)		; Disable
+	LEA	dat_Channel1,A0
+	MOVEQ	#7,D0
+.c:	CLR.B	(n_volume,A0)
+	SF	(n_pt4_dmawait,A0)
+	LEA	n_SIZEOF(A0),A0
+	DBF	D0,.c
+	LEA	mix_Shadow,A0
+	MOVEQ	#7,D0
+.s:	CMPI.W	#1,(aud_PER,A0)		; start pending
+	BNE.S	.n
+	CLR.W	(aud_PER,A0)
+.n:	LEA	aud_SIZEOF(A0),A0
+	DBF	D0,.s
+	BSR.S	pt_MixVoicesOff		; else looped smp keep ringing
+	JSR	(-126,A6)		; Enable
+	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
+	RTS
+
 ; all mixer voices off, shadow vols 0 (next note retriggers)
 pt_MixVoicesOff:
 	MOVEM.L	D0/A0,-(A7)
@@ -873,6 +996,8 @@ pt_MixVoicesOff:
 ; mixer wanted? z=0 yes (8ch or ahi), z=1 no
 pt_MixWanted:
 	TST.B	ahi_Active
+	BNE.S	.y
+	TST.B	agus_On			; amigus: voices from the mixer state
 	BNE.S	.y
 	CMPI.W	#8,dat_RpNumChannels
 	BEQ.S	.y
@@ -916,12 +1041,32 @@ pt_MixCalcSpt:
 	OR.B	D0,D2
 	MOVE.L	D2,mix_Spt
 	BRA.S	.done
-.vbl:	MOVEQ	#0,D0
+.vbl:	MOVEM.L	A6,-(A7)		; vblank: real frequency (ntsc 60)
+	MOVEA.L	ABSEXECBASE.W,A6
+	MOVEQ	#0,D1
+	MOVE.B	530(A6),D1		; VBlankFrequency
+	BNE.S	.vf
+	MOVEQ	#50,D1
+.vf:	MOVE.L	568(A6),D3		; EClockFrequency
+	MOVEM.L	(A7)+,A6
+	MOVEQ	#0,D0
 	MOVE.W	mix_Rate,D0
 	SWAP	D0			; rate<<16
-	MOVEQ	#50,D1
 	BSR.W	pt_MixDiv32
-	MOVE.L	D0,mix_Spt
+	SUB.L	#ECLOCK,D3		; ntsc: output rate 0.9 % above
+	BEQ.S	.vs
+	MOVE.L	D3,D1
+	BPL.S	.ep
+	NEG.L	D1
+.ep:	CMP.L	#8000,D1		; neither pal nor ntsc: keep pal
+	BHI.S	.vs
+	MOVE.L	D0,D2
+	MOVE.L	#ECLOCK,D1
+	BSR.W	pt_MixDiv32
+	MOVE.L	D3,D1
+	BSR.W	pt_MixMul32
+	ADD.L	D2,D0
+.vs:	MOVE.L	D0,mix_Spt
 .done:	MOVE.W	D4,mix_SptMode
 	MOVEM.L	(A7)+,D0-D4
 	RTS
@@ -948,6 +1093,7 @@ pt_MixMul32:
 	MC68020				; 020 insns from here (only reachable with mix_Enabled)
 pt_MixTickSoft:
 	MOVEM.L	D2-D7/A2-A6,-(A7)
+	DK	'M'
 	IFD	DEBUGFX
 	ADDQ.L	#1,dbg_MixSoftCnt
 	IFND	NOBAR
@@ -1001,6 +1147,8 @@ pt_MixOneTick:
 	ENDC
 	; ring dma off (pt_StopAllAudio)? -> restart all rings, not with ahi
 	TST.B	ahi_Active
+	BNE.S	.dmaok
+	TST.B	agus_On
 	BNE.S	.dmaok
 	MOVE.W	DMACONR,D0
 	MOVEQ	#0,D1
@@ -1225,7 +1373,8 @@ dbg_MixChCnt:	DC.W	4
 
 ; guard ring ch (per tick, pt_MixTickExit): pt code outside replayer
 ; write AUDxVOL from ch struct and may reset masks/INTENA of ch1-4
-; mixed pairs: paula vol 64 (mixer scales), audio INTENA off, masks 0
+; mixed pairs: paula vol = setup VOLUME, period = mix rate, audio
+; INTENA off, masks 0
 pt_MixGuardRing:
 	TST.B	ahi_NoPaula		; ahi owns paula
 	BEQ.S	.own
@@ -1242,11 +1391,14 @@ pt_MixGuardRing:
 	MOVEQ	#0,D1
 .ch:	BTST	D1,D2
 	BEQ.S	.n
-	MOVE.W	#64,D0
+	JSR	pt_SndPaulaVol
 	TST.B	ahi_Active		; ahi output: paula mute
+	BNE.S	.g0
+	TST.B	agus_On
 	BEQ.S	.gv
-	MOVEQ	#0,D0
+.g0:	MOVEQ	#0,D0
 .gv:	MOVE.W	D0,(A1)
+	MOVE.W	mix_Period,-2(A1)	; and the ring rate (AUDxPER)
 	CLR.W	(n_pt4_dmacon,A0)
 	CLR.W	(n_pt4_dmaset,A0)
 	CLR.W	(n_pt4_intmask,A0)
@@ -1264,12 +1416,16 @@ pt_MixGuardRing:
 pt_MixRingRestart:
 	TST.B	ahi_NoPaula		; ahi owns paula: never program it (window while switching back)
 	BNE.W	.nopaula
+	TST.B	snd_Switch		; output changes hands
+	BNE.W	.nopaula
+	TST.B	agus_On			; card output: ring stays unheard
+	BNE.W	.nopaula
 	MOVEM.L	D0-D4/A0-A3,-(A7)
 	IFD	DEBUGFX
 	ADDQ.L	#1,dbg_MixRestartCnt
 	ENDC
 	JSR	pt_MixRingClear		; 68000: rings of ch 2/3 only
-	BSR.W	pt_MixLeadSpt		; lead (2 ticks, a500 mode 6)
+	BSR.W	pt_MixLeadSpt		; lead (2 ticks, a500 mode 8)
 	SWAP	D0
 	MOVEQ	#0,D1
 	MOVE.W	D0,D1
@@ -1314,7 +1470,8 @@ pt_MixRingRestart:
 	MOVE.L	D0,(A3)
 	MOVE.W	#MIX_RING/2,(aud_LEN,A3)
 	MOVE.W	mix_Period,(aud_PER,A3)
-	MOVE.W	#64,(aud_VOL,A3)
+	JSR	pt_SndPaulaVol		; setup volume
+	MOVE.W	D0,(aud_VOL,A3)
 	BSET	D2,D4
 .next:	LEA	aud_SIZEOF(A3),A3
 	ADDQ.W	#1,D2
@@ -1324,6 +1481,7 @@ pt_MixRingRestart:
 	LSL.W	#7,D0
 	MOVE.W	D0,INTENA
 	MOVE.W	D0,INTREQ
+	MOVE.W	#$00ff,$DFF09E		; adkcon: no modulation
 	OR.W	#$8000,D4
 	MOVE.W	D4,DMACON
 	MOVEM.L	(A7)+,D0-D4/A0-A3
@@ -1332,7 +1490,7 @@ pt_MixRingRestart:
 
 ; editor play (replaces moveq/lea/lea in pt_EdPlayStart):
 ; track from dat_CursorColumn (6 col each, note col only); a4=ch struct
-; a5=paula/shadow (mix_AudPtrTable) d7=col d0=0 -> orig loop ends
+; a5=paula/shadow (mix_AudPtrTable) d7=col d0=trk (chunk list ch)
 pt_MixEdPlayInit:
 	; d1.b = chunk flag of caller (SNE) untouched, only d0/d7/a4/a5 change
 	MOVEM.L	D2-D3,-(A7)
@@ -1347,6 +1505,7 @@ pt_MixEdPlayInit:
 	BEQ.S	.col
 	MOVEQ	#-6,D7
 .col:	AND.W	#7,D2			; track 0-7
+	MOVE.W	D2,D0			; ch for the chunk list
 	TST.B	mix_Init
 	BNE.S	.tab
 	MOVEM.L	D0-D7/A0-A6,-(A7)
@@ -1464,9 +1623,14 @@ pt_MixUpdateVoice:
 .perok:	CMP.W	(mv_period,A5),D0
 	BEQ.S	.ret
 	MOVE.W	D0,(mv_period,A5)
+	TST.B	agus_On			; card output: no step (and no divu.l on 68000)
+	BNE.S	.ret
 	MOVEQ	#0,D1
 	MOVE.W	D0,D1
-	MOVE.L	#PAULA_CLOCK,D0
+	CMP.W	#MIX_MINPER,D1		; higher pitch: no step overflow
+	BCC.S	.pmin
+	MOVEQ	#MIX_MINPER,D1
+.pmin:	MOVE.L	#PAULA_CLOCK,D0
 	DIVU.L	D1,D0			; voice rate (020+)
 	LSL.L	#8,D0
 	LSL.L	#8,D0
@@ -1792,4 +1956,15 @@ pt_MixRingClear:
 .c:	CLR.L	(A0)+
 	DBF	D0,.c
 	MOVEM.L	(A7)+,D0/A0
+	RTS
+
+; replayer: row of the pattern pos for the editor
+pt_RpRowPos41:
+	MOVE.L	dat_RpPatternPos,D0
+	LSR.L	#4,D0
+	BTST	#5,dat_ModeFlags
+	BNE.S	.s
+	LSR.L	#1,D0
+.s:	AND.W	#$003f,D0
+	MOVE.W	D0,dat_PatternPosition
 	RTS

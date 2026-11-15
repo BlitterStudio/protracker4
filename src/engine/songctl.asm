@@ -1,5 +1,5 @@
 pt_DeletePatternRow:
-	MOVE.W	dat_PatternPosition,D0
+	JMP	pt_DelRow41
 	BNE.S	pt_0465
 	RTS
 pt_0465:
@@ -32,7 +32,7 @@ pt_0468:
 	BSR.S	pt_0469
 	BRA.W	pt_PatternInputProcess
 pt_0469:
-	MOVE.W	dat_PatternPosition,D0
+	JMP	pt_DelFx41
 	BNE.S	pt_046A
 	RTS
 pt_046A:
@@ -321,7 +321,7 @@ pt_r076b8:
 	TSTPC.W	dat_EditCursorPos
 	BEQ.W	pt_r07a08
 pt_r076c6:
-	CLR.W	dat_EditCursorPos
+	JMP	pt_BlkCopy41
 	MOVE.W	#$0001,dat_048B
 	MOVE.W	dat_CursorColumn,D0
 	JSR	pt_GetPatternAddr
@@ -342,7 +342,7 @@ pt_r07704:
 	MOVE.W	D1,dat_048F
 	JMP	pt_ClearStatusMsg
 pt_r07716:
-	CLR.B	dat_KeyCode
+	JMP	pt_BlkPaste41
 	TSTPC.W	dat_048B
 	BEQ.W	pt_r07a16
 	BSR.W	pt_ConvertKeyToNote
@@ -455,7 +455,7 @@ pt_r0788c:
 	JSR	pt_ClearStatusMsg
 	JMP	pt_PatViewDrawAll
 pt_r078b6:
-	CLR.B	dat_KeyCode
+	JMP	pt_BlkClear41
 	TSTPC.W	dat_EditCursorPos
 	BEQ.W	pt_r07a08
 	BSR.W	pt_ConvertKeyToNote
@@ -481,7 +481,7 @@ pt_r078fc:
 	JSR	pt_ClearStatusMsg
 	JMP	pt_PatViewDrawAll
 pt_r07908:
-	CLR.B	dat_KeyCode
+	JMP	pt_BlkRev41
 	TSTPC.W	dat_EditCursorPos
 	BEQ.W	pt_r07a08
 	BSR.W	pt_ConvertKeyToNote
@@ -532,7 +532,7 @@ pt_r079a6:
 	LSL.W	#4,D5
 	SUB.W	D0,D1
 	MOVE.W	D1,D6
-	MOVE.W	dat_CursorColumn,D0
+	JSR	pt_BlkTrAddr41
 	JSR	pt_GetPatternAddr
 	LEA	(0,A0,D5.W),A3
 	MOVEQ	#0,D3
@@ -596,7 +596,7 @@ pt_r07abc:
 dat_KeyActionTable:
 	DC.W	$0000
 pt_r07ace:
-	CLR.B	dat_KeyCode
+	JMP	pt_KillTrk41
 	BSR.S	pt_ConvertKeyToNote
 	MOVE.W	dat_CursorColumn,D0
 	JSR	pt_GetPatternAddr
@@ -623,7 +623,7 @@ pt_r07b1a:
 	SUBQ.W	#1,D0
 	BRA.S	pt_r07b0a
 pt_r07b1e:
-	CLR.B	dat_KeyCode
+	JMP	pt_UndoSwap41
 	MOVEQ	#0,D0
 	JSR	pt_GetPatternAddr
 	LEA	dat_14F3,A1
@@ -635,8 +635,7 @@ pt_r07b36:
 	DBF	D0,pt_r07b36
 	JMP	pt_PatViewDrawAll
 pt_ConvertKeyToNote:
-	MOVEM.L	D0/A0-A1,-(A7)
-	MOVEQ	#0,D0
+	JMP	pt_UndoSave41
 	JSR	pt_GetPatternAddr
 	LEA	dat_14F3,A1
 	MOVE.W	#$00ff,D0
@@ -650,29 +649,29 @@ pt_r07b68:
 	LEA	dat_0D6C,A0
 	BSR.W	pt_ShowYesNoDialog
 	BNE.W	pt_SetPaletteEdit
-	MOVE.W	dat_CurrentSample,dat_PatternKeyVar
+	JSR	pt_SmxAllBeg		;07b7c: ;41 samples 32-63 too
 	MOVE.W	#$0001,dat_CurrentSample
 pt_r07b8e:
 	JSR	pt_DrawSampleHex
 	JSR	pt_BtnSmpBoost
 	ADDQ.W	#1,dat_CurrentSample
-	CMPI.W	#$0020,dat_CurrentSample
+	JSR	pt_SmxAllNext		;07ba0: ;41
 	BCS.S	pt_r07b8e
-	MOVE.W	(dat_PatternKeyVar,PC),dat_CurrentSample
+	JSR	pt_SmxAllEnd		;07baa: ;41
 	JMP	pt_DrawSampleHex
 pt_r07bb8:
 	LEA	dat_0D6D,A0
 	BSR.W	pt_ShowYesNoDialog
 	BNE.W	pt_SetPaletteEdit
-	MOVE.W	dat_CurrentSample,dat_PatternKeyVar
+	JSR	pt_SmxAllBeg		;07bc6: ;41 samples 32-63 too
 	MOVE.W	#$0001,dat_CurrentSample
 pt_r07bd8:
 	JSR	pt_DrawSampleHex
 	JSR	dat_0D5F
 	ADDQ.W	#1,dat_CurrentSample
-	CMPI.W	#$0020,dat_CurrentSample
+	JSR	pt_SmxAllNext		;07bea: ;41
 	BCS.S	pt_r07bd8
-	MOVE.W	(dat_PatternKeyVar,PC),dat_CurrentSample
+	JSR	pt_SmxAllEnd		;07bf4: ;41
 	JMP	pt_DrawSampleHex
 pt_HandlePlayKeys:
 	CMPI.B	#$50,dat_KeyCode
@@ -821,7 +820,7 @@ pt_04B8:
 pt_04B9:
 	CMPI.W	#$0001,dat_CursorColumn
 	BNE.S	pt_04BB
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;07dc4: ;41 samples to 3f
 	BLS.S	pt_04BA
 	RTS
 pt_04BA:
@@ -861,7 +860,7 @@ pt_04BE:
 pt_04BF:
 	CMPI.W	#$0007,dat_CursorColumn
 	BNE.S	pt_04C1
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;07e62: ;41 samples to 3f
 	BLS.S	pt_04C0
 	RTS
 pt_04C0:
@@ -901,7 +900,7 @@ pt_04C4:
 pt_04C5:
 	CMPI.W	#$000d,dat_CursorColumn
 	BNE.S	pt_04C7
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;07f02: ;41 samples to 3f
 	BLS.S	pt_04C6
 	RTS
 pt_04C6:
@@ -941,7 +940,7 @@ pt_04CA:
 pt_04CB:
 	CMPI.W	#$0013,dat_CursorColumn
 	BNE.S	pt_04CD
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;07fa2: ;41 samples to 3f
 	BLS.S	pt_04CC
 	RTS
 pt_04CC:
@@ -985,7 +984,7 @@ pt_04D1:
 pt_04D2:
 	CMPI.W	#$0019,dat_CursorColumn
 	BNE.S	pt_04D4
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;0804e: ;41 samples to 3f
 	BLS.S	pt_04D3
 	RTS
 pt_04D3:
@@ -1025,7 +1024,7 @@ pt_04D7:
 pt_04D8:
 	CMPI.W	#$001f,dat_CursorColumn
 	BNE.S	pt_04DA
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;080ee: ;41 samples to 3f
 	BLS.S	pt_04D9
 	RTS
 pt_04D9:
@@ -1065,7 +1064,7 @@ pt_04DD:
 pt_04DE:
 	CMPI.W	#$0025,dat_CursorColumn
 	BNE.S	pt_04E0
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;0818e: ;41 samples to 3f
 	BLS.S	pt_04DF
 	RTS
 pt_04DF:
@@ -1105,7 +1104,7 @@ pt_04E3:
 pt_04E4:
 	CMPI.W	#$002b,dat_CursorColumn
 	BNE.S	pt_04E6
-	CMP.W	#$0001,D1
+	CMP.W	#$0003,D1		;0822e: ;41 samples to 3f
 	BLS.S	pt_04E5
 	RTS
 pt_04E5:
@@ -1214,8 +1213,8 @@ pt_r0838c:
 	MOVE.L	D0,D7
 	MOVE.W	dat_CursorColumn,D0
 	JSR	pt_GetPatternAddr
-	MOVE.W	dat_PatternPosition,D0
-	LSL.W	#4,D0
+	JSR	pt_PosOfs41
+	NOP
 	LEA	(0,A0,D0.W),A0
 	MOVE.W	(2,A0),D0
 	AND.W	#$0fff,D0
@@ -1256,8 +1255,7 @@ pt_CursorPatternEdit:
 	JSR	pt_GetPatternAddr
 	MOVE.W	dat_PatternPosition,D0
 	SUBQ.W	#1,D0
-	AND.W	#$003f,D0
-	LSL.W	#4,D0
+	JSR	pt_RowOfs41
 	LEA	(0,A0,D0.W),A0
 	MOVE.W	(2,A0),D0
 	AND.W	#$0fff,D0
@@ -1392,8 +1390,8 @@ pt_0500:
 pt_0501:
 	CLR.B	dat_KeyCode
 	MOVEA.L	dat_PlayModePtr,A1
-	MOVE.B	(0,A1,D0.W),D0
-	CMP.W	#$0024,D0
+	JSR	pt_NoteKey41
+	NOP
 	BCC.S	pt_0505
 	MOVE.L	dat_TempBufPtr,D1
 	BEQ.S	pt_0505
@@ -1437,8 +1435,7 @@ pt_0508:
 	LEA	dat_PeriodTable,A1
 	MOVE.L	D0,D4
 	LSL.W	#1,D0
-	MOVEQ	#0,D3
-	MOVE.W	(0,A1,D0.W),D3
+	JSR	pt_NotePer41
 	MOVEA.L	dat_ModulePtr,A0
 	LEA	(14,A0),A0
 	MOVE.W	dat_CurrentSample,D1
@@ -1452,7 +1449,8 @@ pt_CheckPatternPlay:
 	AND.B	#$0f,D1
 	MULU	#$004a,D1
 	ADDA.L	D1,A1
-	MOVE.W	(0,A1,D0.W),dat_PlaybackEnable
+	JSR	pt_NotePlay41
+	NOP
 	TST.L	D2
 	BEQ.S	pt_050A
 	CMPI.B	#$02,dat_SampleKeyState
@@ -1486,7 +1484,10 @@ pt_050C:
 	ADDA.L	D0,A0
 	MOVE.W	dat_CursorColumn,D0
 	DIVU	#$0006,D0
-	BTST	#5,dat_ModeFlags
+	BRA.S	pt_050D
+	NOP
+	NOP
+	NOP
 	BNE.S	pt_050D
 	DIVU	#$0002,D0
 pt_050D:
@@ -1510,8 +1511,7 @@ pt_r08768:
 	BEQ.S	pt_r0877c
 	MOVE.W	dat_DisplayWordVar2,(2,A0)
 pt_r0877c:
-	MOVEQ	#0,D0
-	MOVE.W	dat_SamplePlayMode,D0
+	JSR	pt_SmxEntry		;0877c: ;41 logical sample
 	LSL.W	#4,D0
 	ANDI.B	#$0f,(2,A0)
 	ADD.B	D0,(2,A0)
@@ -1557,10 +1557,12 @@ pt_ProcessPlayback:
 	MOVEQ	#0,D0
 	MOVE.W	dat_CursorColumn,D0
 	DIVU	#$0006,D0
-	LEA	dat_DiskIOReady,A0
-	MOVE.B	(0,A0,D0.W),D0
-	SUBQ.W	#1,D0
-	AND.W	#$0003,D0
+	JSR	pt_MultiNext41
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
 	MULU	#$0006,D0
 	MOVE.W	D0,dat_CursorColumn
 	BRA.W	pt_ReturnFromPlay
@@ -1767,18 +1769,18 @@ pt_InitAudioChannels:
 	RTS
 pt_BuildChunkList:
 	MOVEM.L	D0-D1/D6-D7/A0-A3,-(A7)
-	LEA	dat_AudioChannelPtrs,A3
-	ADD.W	D0,D0
-	ADD.W	D0,D0
-	MOVEA.L	(0,A3,D0.W),A3
+	JSR	pt_ChunkList41
+	NOP
+	NOP
+	NOP
+	NOP
 	MOVE.W	D1,D0
 	BNE.S	pt_BuildChunkListPieces
 	BRA.S	pt_BuildChunkListEnd
 pt_BuildChunkListPieces:
 	ADD.W	D0,D0
 	ADD.W	D0,D0
-	LEA	dat_ModulePtr,A0
-	MOVEA.L	(0,A0,D0.W),A1
+	JSR	pt_SmxChunkPtr		;08b2c: ;41 samples 32-63
 	ADD.W	D0,D0
 	LEA	SECSTRT_4,A0
 	MOVEA.L	(0,A0,D0.W),A2
@@ -2044,8 +2046,7 @@ pt_DoStepAdvance:
 dat_EditStepSize:
 	DC.W	$0001
 pt_KeyCursorRight:
-	DC.W	$4a7a
-	DC.W	$fe8a
+	TSTPC.W	dat_KeyRepeatState
 	BEQ.S	pt_DoCursorRight
 	ADDQ.W	#1,dat_KeyRepeatCount
 	CMPI.W	#$0006,dat_KeyRepeatCount
@@ -2057,7 +2058,8 @@ pt_DoCursorRight:
 	ADDQ.W	#1,dat_CursorColumn
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_CursorRight8ChWrap
-	CMPI.W	#$0030,dat_CursorColumn
+	JSR	pt_TrkCurR41
+	NOP
 	BMI.S	pt_CursorMoveDone
 	CLR.W	dat_CursorColumn
 	BRA.S	pt_ReturnFromPlay
@@ -2082,7 +2084,8 @@ pt_DoCursorLeft:
 	BPL.S	pt_ReturnFromPlay
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_CursorLeft8ChWrap
-	MOVE.W	#$002f,dat_CursorColumn
+	JSR	pt_TrkCurL41
+	NOP
 	BRA.S	pt_ReturnFromPlay
 pt_CursorLeft8ChWrap:
 	MOVE.W	#$0017,dat_CursorColumn

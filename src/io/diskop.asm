@@ -142,6 +142,8 @@ pt_DosRestoreRequesters:
 ; help open, replaces 2x str_HelpFilePath / $3ed / DosLibBase / Open
 ; -> d0 = fh, a6 = dosbase, d1/d2 trashed
 pt_OpenHelpFile:
+	JSR	pt_WscOff41		; wide level bars off the title rows
+	JSR	pt_HelpTop41
 	MOVEA.L	dat_DosLibBase,A6
 	MOVE.L	#disk_ProgdirHelp,D1
 	MOVE.L	#$000003ed,D2
@@ -407,6 +409,7 @@ pt_DiskUseName:
 ; BSR pt_CopyFilename / MOVEA.L (A7)+,A0 / MOVEQ 79,D0 (a0 = entry)
 ; orig then copies 80 chars (a0) -> (a1): full name if long
 pt_DiskDirName:
+	BSR.W	pt_DiskTopPush		; list position of this dir for parent
 	MOVE.L	A0,-(A7)
 	CLR.L	disk_LongPtr
 	MOVEA.L	dat_SampleEditorPtr,A0
@@ -520,9 +523,23 @@ pt_MainDispatchMore:
 	BEQ.W	pt_MainCreditsJmp
 	CMP.W	#$0030,D2
 	BEQ.S	pt_MainLoadSample
+	CMP.W	#$004a,D2		; 4/8 cells
+	BEQ.S	.c
+	CMP.W	#$004b,D2
+	BEQ.S	.c
 	RTS
+.c:	JMP	pt_ChnCellBtn41
+; scope box: the wide window shows the logo there (its stage is the
+; analyzer), a click does nothing
 pt_MainCreditsJmp:
-	JMP	pt_BtnMainCredits
+	TST.B	rtg_Wide
+	BEQ.S	.c
+	TST.L	rwd_Mem
+	BEQ.S	.c
+	TST.B	rwd_On
+	BEQ.S	.c
+	JMP	pt_WaitMouseRelease
+.c:	JMP	pt_BtnMainCredits
 pt_MainLoadSample:
 	JSR	pt_BtnMainDiskOp
 	JMP	pt_SampleEditorSetup
@@ -538,6 +555,17 @@ pt_DlgKeys41:
 .esc:	CLR.B	dat_KeyCode
 	ADDQ.L	#4,A7			; drop ret, continue like gadget CANCEL
 	JMP	pt_032C
+
+; notice box (pt_SetupEditScreen): return/esc close like the gadget
+; opening key must not close it, closing key must not reach the editor
+pt_NoteOpen41:
+	MOVE.W	#$ffff,dat_DiskOpFlag
+	CLR.B	dat_KeyCode
+	RTS
+pt_NoteDone41:
+	CLR.W	dat_DiskOpFlag
+	CLR.B	dat_KeyCode
+	RTS
 
 ; format window (pt_05B1): esc = cancel (pt_05B6, ret -1), else Z like LMB
 ; (BTST #6,$BFE001: Z=1 = pressed) for the loop BNE.S
@@ -591,10 +619,19 @@ pt_ScrBackPoll41:
 	CMPI.W	#15,dbg_ScrBackPolls
 	BNE.S	.dbg
 	MOVE.L	scr41_Win,dbg_ScrBackWin
+	MOVE.W	DMACONR,dbg_ScrBackDma	; native wb seen?
 	MOVEQ	#1,D2
 .dbg:
 	ENDC
-	TST.W	D2
+	MOVEA.L	ABSEXECBASE.W,A6
+	MOVEQ	#0,D0
+	MOVE.L	#$8000,D1
+	JSR	(-306,A6)		; SetSignal: ctrl-f, a second start
+	TST.W	D0
+	BPL.S	.nf
+	ADDQ.B	#1,req_Front
+	MOVEQ	#1,D2			; as a click
+.nf:	TST.W	D2
 	BEQ.S	.out
 	MOVEA.L	dat_IntuiLibBase,A6	; click: pt to front, wait loop ends next pass
 	MOVEA.L	dat_ScreenPtr,A0
@@ -614,6 +651,12 @@ pt_ScrBackDone41:
 	JSR	(-72,A6)		; CloseWindow
 	MOVEA.L	(A7)+,A0
 .r:	SF	scr41_Fail
+	TST.L	rtg_Screen		; card screen goes back to front
+	BEQ.S	.nr
+	TST.B	rtg_RunWin
+	BNE.S	.nr
+	MOVEA.L	rtg_Screen,A0
+.nr:
 	IFD	DEBUGAUTO
 	CLR.W	dbg_ScrBackPolls
 	ENDC
@@ -628,5 +671,102 @@ scr41_Tags:	DC.L	$80000064,40		; WA_Left
 	DC.L	$8000006b,$0002000e	; WA_Flags: DRAGBAR|DEPTHGADGET|CLOSEGADGET|NOCAREREFRESH
 	DC.L	$8000006e,scr41_Title	; WA_Title
 	DC.L	0
-scr41_Title:	DC.B	"ProTracker 4.1.1 - click here to return",0
+scr41_Title:	DC.B	"ProTracker 4.1.2 - click here to return",0
 	EVEN
+
+;--- list position over dir changes: a dir clicked pushes the list top
+; with the path length; when the list is read again with that path
+; length (parent), the top comes back
+DISK_TOPN	EQU	8
+pt_DiskTopPush:
+	MOVEM.L	D0-D1/A0-A1,-(A7)
+	BSR.S	pt_DiskPathLen
+	MOVE.W	disk_TopN,D1
+	CMP.W	#DISK_TOPN,D1		; full: drop the oldest
+	BLO.S	.p
+	LEA	disk_TopStk,A0
+	MOVEQ	#DISK_TOPN-2,D1
+.sh:	MOVE.L	4(A0),(A0)+
+	DBF	D1,.sh
+	MOVEQ	#DISK_TOPN-1,D1
+.p:	SWAP	D0			; hi: path length, lo: top
+	MOVEA.L	dat_ButtonHitboxes,A1
+	MOVE.W	24(A1),D0
+	LEA	disk_TopStk,A0
+	ADD.W	D1,D1
+	ADD.W	D1,D1
+	MOVE.L	D0,(A0,D1.W)
+	LSR.W	#2,D1
+	ADDQ.W	#1,D1
+	MOVE.W	D1,disk_TopN
+	MOVEM.L	(A7)+,D0-D1/A0-A1
+	RTS
+
+; d0.w = length of the disk op path
+pt_DiskPathLen:
+	MOVEA.L	dat_SampleEditorPtr,A0
+	MOVEQ	#-1,D0
+.l:	ADDQ.W	#1,D0
+	TST.B	(A0)+
+	BNE.S	.l
+	RTS
+
+; list read (a5 = list block), replaces MOVE.W (24,A5),D0: d0 = top to
+; draw; the parent of a pushed dir gets its old top (within the list)
+pt_DiskTopRestore:
+	MOVEM.L	D1-D2/A0,-(A7)
+	BSR.S	pt_DiskPathLen
+	LEA	disk_TopStk,A0
+	MOVE.W	disk_TopN,D1
+.l:	SUBQ.W	#1,D1
+	BMI.S	.none
+	MOVE.W	D1,D2
+	ADD.W	D2,D2
+	ADD.W	D2,D2
+	CMP.W	(A0,D2.W),D0		; pushed length vs this path
+	BHI.S	.none			; deeper dir: as before
+	BEQ.S	.got
+	MOVE.W	D1,disk_TopN		; longer than this path: gone
+	BRA.S	.l
+.got:	MOVE.W	D1,disk_TopN
+	MOVE.W	2(A0,D2.W),D0		; old top within the list
+	MOVE.W	22(A5),D1
+	SUB.W	#19,D1
+	BPL.S	.c
+	MOVEQ	#0,D1
+.c:	CMP.W	D1,D0
+	BLS.S	.s
+	MOVE.W	D1,D0
+.s:	MOVE.W	D0,24(A5)
+	BRA.S	.r
+.none:	MOVE.W	24(A5),D0
+.r:	MOVEM.L	(A7)+,D1-D2/A0
+	RTS
+
+; save name: song name (a0, d0+1 chars) after "mod."/"ptm." at a1; a ':'
+; would name a device, a '/' a drawer -> '_' (the song name stays);
+; stops at a nul, always ends the string
+pt_SaveName41:
+	MOVE.L	D1,-(A7)
+.l:	MOVE.B	(A0)+,D1
+	BEQ.S	.e
+	CMP.B	#':',D1
+	BEQ.S	.u
+	CMP.B	#'/',D1
+	BNE.S	.p
+.u:	MOVEQ	#'_',D1
+.p:	MOVE.B	D1,(A1)+
+	DBF	D0,.l
+.e:	CLR.B	(A1)
+	MOVE.L	(A7)+,D1
+	RTS
+
+; rename: the new name gets the path only, the old one the full long
+; name (the long name hook would else go to the first call)
+pt_RenPath41:
+	MOVE.L	disk_LongPtr,disk_RenLong
+	CLR.L	disk_LongPtr
+	JMP	pt_CopyFilename
+pt_RenOld41:
+	MOVE.L	disk_RenLong,disk_LongPtr
+	JMP	pt_CopyFilename

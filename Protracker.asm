@@ -89,6 +89,39 @@ RMB	MACRO
 	NOP
 	ENDC
 	ENDM
+; diag: one char to the debug output (RawPutChar); flags are lost
+AGM	MACRO				; \2 = agus_Mem + \1 (card tables, allocated)
+	MOVEA.L	agus_Mem,\2
+	ADDA.W	#\1,\2
+	ENDM
+
+AGW	MACRO				; card register write -> test log
+	IFD	DEBUGAUTO
+	IFND	AGNOLOG			; timing builds: no log
+	BSR.W	dbg_AgRec
+	DC.W	\1
+	ENDC
+	ENDC
+	ENDM
+
+DK	MACRO
+	IFD	DIAGK
+	MOVEM.L	D0-D1/A0-A1/A6,-(A7)
+	MOVEQ	#\1,D0
+	MOVEA.L	ABSEXECBASE.W,A6
+	JSR	(-516,A6)
+	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
+	ENDC
+	ENDM
+
+; build stamp: date time commit, 25 chars
+	IFD	PTSTAMP
+	INCLUDE	"build/stamp.i"
+	ELSE
+STAMP	MACRO
+	DC.B	"UNKNOWN                  "
+	ENDM
+	ENDC
 
 	INCLUDE	"include/pt_structs.i"
 
@@ -128,13 +161,32 @@ RMB	MACRO
 	INCLUDE	"src/engine/efx8.asm"
 	INCLUDE	"src/io/samples.asm"
 	INCLUDE	"src/sys/ahi.asm"
+	INCLUDE	"src/sys/cardflt41.asm"
 	INCLUDE	"src/sys/rtg.asm"
+	INCLUDE	"src/sys/rtgpat.asm"
+	INCLUDE	"src/sys/rtgwide.asm"
+	INCLUDE	"src/sys/rtgtrk.asm"
 	INCLUDE	"src/sys/diagwin.asm"
 	INCLUDE	"src/io/exe8.asm"
 	INCLUDE	"src/engine/mixit.asm"
 	INCLUDE	"src/ui/setup41.asm"
 	INCLUDE	"src/ui/filter41.asm"
 	INCLUDE	"src/io/dyn41.asm"
+	INCLUDE	"src/io/midi41.asm"
+	INCLUDE	"src/sys/amigus41.asm"
+	INCLUDE	"src/sys/agfake41.asm"
+	INCLUDE	"src/sys/sndout41.asm"
+	INCLUDE	"src/io/wide41.asm"
+	INCLUDE	"src/io/loadmode.asm"
+	INCLUDE	"src/ui/status41.asm"
+	INCLUDE	"src/io/iocheck41.asm"
+	INCLUDE	"src/engine/smpx41.asm"
+	INCLUDE	"src/io/chg41.asm"
+	INCLUDE	"src/ui/trk41.asm"
+	INCLUDE	"src/ui/wnat41.asm"
+	INCLUDE	"src/ui/chn41.asm"
+	INCLUDE	"src/io/ftr41.asm"
+	INCLUDE	"src/sys/dup41.asm"
 	INCLUDE	"src/sys/tail.asm"
 ;--- data
 	INCLUDE	"src/data/data.asm"

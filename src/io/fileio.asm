@@ -146,6 +146,7 @@ pt_0E02:
 dat_SongSaveChecksum:
 	DS.W	1
 pt_0E04:
+	JSR	pt_ChgSync41
 	CMPI.L	#$43484721,dat_SongChangedMagic
 	BNE.S	pt_0E05
 	JSR	pt_SaveConfirmDialog
@@ -153,7 +154,7 @@ pt_0E04:
 	BEQ.S	pt_0E05
 	RTS
 pt_0E05:
-	CLR.L	dat_SongChangedMagic
+	JSR	pt_LoadStop41
 	CLR.W	dat_SongSaveChecksum
 	CLR.W	dat_XpkLibFlag
 	BSR.W	pt_ClearBufferLoop
@@ -180,7 +181,7 @@ pt_0E07:
 	MOVEQ	#4,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000004,D0
-	BNE.W	pt_CloseAndInitModule
+	BNE.W	pt_ShortFileHook
 	LEA	dat_FileIOBuf,A0
 	CMPI.L	#$50503230,(A0)
 	BEQ.W	pt_0E09
@@ -190,7 +191,7 @@ pt_0E07:
 	BEQ.W	pt_0E89
 	CMPI.L	#$58504b46,(A0)
 	BEQ.W	pt_0E0B
-	CMPI.L	#$4d4d4431,(A0)
+	JSR	pt_MagicMod41
 	BEQ.W	pt_CloseFileAndContinue
 	CMPI.L	#$4d4d4430,(A0)
 	BEQ.W	pt_CloseFileAndContinue
@@ -341,7 +342,7 @@ dat_0E1C:
 	MOVE.L	(8,A7),dat_0E22
 	MOVE.W	#$0003,dat_0E21
 	MOVEM.L	D0-D7/A0-A6,-(A7)
-	JSR	dat_03FB
+	JSR	pt_PwBack41
 	MOVEA.L	(dat_IntuiLibBase,PC),A6
 	LEA	(dat_0E24+4,PC),A0
 	JSR	(-204,A6)
@@ -403,7 +404,7 @@ pt_r158f4:
 	MOVEA.L	(dat_0E1E,PC),A0
 	JSR	(-72,A6)
 pt_r15924:
-	JSR	pt_OpenScreenInit
+	JSR	pt_PwFront41
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	MOVEQ	#0,D0
 	RTS
@@ -411,7 +412,7 @@ pt_r15932:
 	MOVEA.L	(dat_IntuiLibBase,PC),A6
 	MOVEA.L	(dat_0E1E,PC),A0
 	JSR	(-72,A6)
-	JSR	pt_OpenScreenInit
+	JSR	pt_PwFront41
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	MOVEQ	#-1,D0
 	RTS
@@ -494,7 +495,7 @@ dat_FileIOBufLen:
 	DS.L	1
 pt_DosLibDiskOp:
 	MOVEA.L	(dat_DosLibBase,PC),A6
-	MOVE.L	dat_FileHandle,D1
+	JSR	pt_LoadFlags41
 	MOVE.L	#$00000438,D2
 	MOVEQ	#-1,D3
 	BSR.W	pt_FileSeekPos
@@ -515,7 +516,9 @@ pt_DosLibDiskOp:
 	CMPI.L	#$45584f34,(A0)
 	BEQ.W	pt_CheckModifiedAndInit
 	CMPI.L	#$3843484e,(A0)
-	BEQ.W	pt_0E4C
+	BNE.S	pt_Ld8No41
+	JMP	pt_Load8Stop41
+pt_Ld8No41:
 	CMPI.L	#$4d214b21,(A0)
 	BEQ.W	dat_0E46
 	JSR	pt_FmtCheckMore
@@ -613,6 +616,7 @@ pt_0E43:
 	BSR.W	pt_0E9D
 	CMP.L	#$00000001,D0
 	BEQ.W	pt_CheckModifiedAndInit
+	JSR	pt_LoadModeAuto		;41 on load: auto 4ch
 	JSR	pt_InitNewModule
 	JSR	pt_SetupSampleView
 	LEA	pt_PaletteEditEntry,A0
@@ -651,8 +655,9 @@ pt_0E45:
 	BNE.W	pt_CloseAndInitModule
 	MOVEA.L	dat_ModulePtr,A0
 	MOVE.B	#$7f,(951,A0)
-	BRA.W	pt_0E53
+	JMP	pt_Fmt15Clamp41
 dat_0E46:
+	JSR	pt_LoadModeAuto		;41 on load: auto 4ch (before the buffer size)
 	TSTPC.W	dat_SongSaveChecksum
 	BNE.W	pt_CheckModifiedAndInit
 	TST.B	dat_PatternBufFlag
@@ -688,6 +693,7 @@ pt_0E4A:
 	MOVE.L	#$00010001,D1
 	MOVEA.L	ABSEXECBASE.W,A6
 	JSR	(-198,A6)
+	JSR	pt_ModBuf41		;41 no room for 100 patterns: 64 again
 	MOVE.L	D0,dat_ModulePtr
 	BNE.S	pt_0E4B
 	BRA.W	pt_SetupPaletteMode
@@ -700,7 +706,7 @@ pt_0E4B:
 	BEQ.S	pt_r15e80
 	MOVE.W	#$0001,dat_DiskOpState
 	BCLR	#5,dat_ModeFlags
-	JSR	pt_ClearScreenBuf2
+	JSR	pt_Ld8Buf41
 	MOVE.W	#$0006,dat_RpNumChannels
 	BRA.W	pt_0E50
 pt_r15e80:
@@ -713,7 +719,7 @@ pt_0E4C:
 	BEQ.S	pt_0E4D
 	MOVE.W	#$0001,dat_DiskOpState
 	BCLR	#5,dat_ModeFlags
-	JSR	pt_ClearScreenBuf2
+	JSR	pt_Ld8Buf41
 	MOVE.W	#$0008,dat_RpNumChannels
 	BRA.W	pt_0E50
 pt_0E4D:
@@ -722,7 +728,8 @@ pt_0E4D:
 	MOVE.W	#$0008,dat_RpNumChannels
 	BRA.S	pt_0E50
 pt_CheckModifiedAndInit:
-	BTST	#5,dat_ModeFlags
+	JSR	pt_LoadModeAuto
+	NOP
 	BNE.S	pt_0E4F
 	MOVE.W	#$0001,dat_FileOpFlag
 pt_0E4F:
@@ -762,16 +769,15 @@ pt_0E54:
 	BSR.W	pt_ShowStatusMsg
 	MOVEA.L	dat_ModulePtr,A0
 	LEA	(mod_positions,A0),A0
-	MOVEQ	#0,D0
-	MOVE.B	(-1,A0),D0
-	MOVEQ	#0,D3
-pt_0E55:
-	CMP.B	(A0)+,D3
-	BHI.S	pt_0E56
-	MOVE.B	(-1,A0),D3
-pt_0E56:
-	DBF	D0,pt_0E55
-	ADDQ.W	#1,D3
+	JSR	pt_FmtPatCount
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
+	NOP
 	LSL.L	#8,D3
 	LSL.L	#2,D3
 	BTST	#5,dat_ModeFlags
@@ -887,7 +893,7 @@ pt_0E60:
 	MOVE.L	#dat_FilePathBufPtr,D2
 	MOVEQ	#4,D3
 	BSR.W	pt_CheckModHeader
-	MOVE.L	dat_FilePathBufPtr,D2
+	JSR	pt_DynLenCheck41
 	BEQ.S	pt_0E62
 	MOVE.L	D2,D0
 	MOVE.L	D2,-(A7)
@@ -938,7 +944,7 @@ pt_0E64:
 	ADDQ.W	#1,(6,A0)
 pt_0E65:
 	ADDQ.W	#1,dat_CurrentSample
-	CMPI.W	#$0020,dat_CurrentSample
+	JSR	pt_SmxNext		;161d4: ;41 block PT4X
 	BNE.W	pt_0E5F
 pt_GetFileHandle:
 	MOVE.L	(dat_FileHandle,PC),D1
@@ -947,7 +953,7 @@ pt_GetFileHandle:
 	JSR	(-36,A6)
 	CLR.L	dat_FileHandle
 pt_0E67:
-	MOVE.W	#$0001,dat_CurrentSample
+	JSR	pt_SmxLdEnd		;161f4: ;41
 	MOVE.L	#$00000006,dat_RpSpeed
 	CLR.W	dat_RecordMode
 	BSR.W	pt_ClearStatusMsg
@@ -1112,8 +1118,11 @@ pt_0E86:
 	BSR.W	pt_CloseFileHandle
 	LEA	(dat_0F21,PC),A0
 	BRA.S	pt_FinishPaletteEdit
+pt_ShortFileHook:
+	JMP	pt_ShortFile41
 pt_CloseAndInitModule:
 	BSR.W	pt_CloseFileHandle
+	SF	wide_Pend
 	JSR	pt_InitNewModule
 	JSR	pt_SetupSampleView
 	LEA	(dat_0F1A,PC),A0
@@ -1283,7 +1292,7 @@ pt_r166be:
 	MOVE.B	dat_SongModified+1,dat_ModeFlags+1
 	MOVE.W	#$0001,dat_DiskOpState
 	MOVEM.L	D0-D7/A0-A6,-(A7)
-	JSR	pt_ClearScreenBuf2
+	JSR	pt_LdSongBuf41
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	BRA.W	pt_0E06
 dat_FileFormatFlag:
@@ -1327,7 +1336,8 @@ pt_0E9A:
 	BTST	#5,dat_ModeFlags
 	BNE.W	pt_0E9D
 	BCLR	#5,dat_ModeFlags
-	MOVE.W	#$0008,dat_RpNumChannels
+	JSR	pt_Trk8Mode41
+	NOP
 	MOVE.W	#$0100,D0
 	MULU	dat_RpNumChannels,D0
 	MOVE.W	D0,dat_RowDataVar
@@ -1355,7 +1365,8 @@ pt_0E9C:
 	RTS
 pt_0E9D:
 	BSET	#5,dat_ModeFlags
-	MOVE.W	#$0004,dat_RpNumChannels
+	JSR	pt_Trk4Mode41
+	NOP
 	MOVE.W	#$0100,D0
 	MULU	dat_RpNumChannels,D0
 	MOVE.W	D0,dat_RowDataVar
@@ -1401,13 +1412,13 @@ pt_0EA1:
 	MOVE.L	D0,dat_FileHandle
 	BEQ.W	pt_DrawWaveform
 	MOVE.L	dat_FileHandle,D1
-	LEA	dat_SampleChannelMask,A0
+	LEA	dat_FileIOBuf,A0
 	MOVE.L	A0,D2
 	MOVEQ	#16,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000010,D0
-	BNE.W	pt_CloseAndInitModule
-	LEA	dat_SampleChannelMask,A0
+	BNE.W	pt_ShortFileHook
+	LEA	dat_FileIOBuf,A0
 	CMPI.L	#$464f524d,(A0)+
 	BNE.W	pt_ShowLoadMsg
 	CMPI.L	#$50415454,(8,A0)
@@ -1426,6 +1437,8 @@ pt_0EA2:
 	BNE.S	pt_ShowLoadMsg
 	BRA.S	pt_0EA4
 pt_0EA3:
+	CMPI.L	#$00000400,(A0)		;41 8ch file: not in 4ch
+	BNE.S	pt_ShowLoadMsg
 	MOVE.L	#$00000400,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000400,D0
@@ -1490,13 +1503,13 @@ pt_0EAA:
 	MOVE.L	D0,dat_FileHandle
 	BEQ.W	pt_DrawWaveform
 	MOVE.L	dat_FileHandle,D1
-	LEA	dat_SampleChannelMask,A0
+	LEA	dat_FileIOBuf,A0
 	MOVE.L	A0,D2
 	MOVEQ	#16,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000010,D0
-	BNE.W	pt_CloseAndInitModule
-	LEA	dat_SampleChannelMask,A0
+	BNE.W	pt_ShortFileHook
+	LEA	dat_FileIOBuf,A0
 	CMPI.L	#$464f524d,(A0)+
 	BNE.S	pt_LoadStringRef
 	CMPI.L	#$5452434b,(8,A0)
@@ -1563,7 +1576,7 @@ pt_0EB0:
 	MOVEQ	#4,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000004,D0
-	BNE.W	pt_CloseAndInitModule
+	BNE.W	pt_ShortFileHook
 	LEA	dat_FileIOBuf,A0
 	CMPI.L	#$000003f3,(A0)
 	BNE.S	pt_0EB1
@@ -1577,7 +1590,7 @@ pt_0EB0:
 	MOVEQ	#8,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000008,D0
-	BNE.W	pt_CloseAndInitModule
+	BNE.W	pt_ShortFileHook
 	LEA	dat_SampleChannelMask,A0
 	JSR	pt_Exe8LoadMark
 	NOP
@@ -1645,8 +1658,7 @@ pt_0EBB:
 	MOVEA.L	(dat_ModulePtr,PC),A0
 	MOVEQ	#19,D0
 pt_0EBC:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0EBC
+	JSR	pt_SaveName41
 	MOVEA.L	(A7),A1
 	SUBQ.L	#1,A1
 pt_0EBD:
@@ -1716,7 +1728,7 @@ pt_DrawWaveform:
 	LEA	(dat_0FEA,PC),A0
 pt_ShowMsgSetPal:
 	BSR.W	pt_ShowStatusMsg
-	JSR	pt_SetPaletteEdit
+	JSR	pt_SaveErrPal41
 	CLR.W	dat_FileWriteSize
 	MOVEQ	#0,D0
 	RTS
@@ -1894,6 +1906,7 @@ pt_0ED3:
 	BCS.S	pt_0ED4
 	MOVE.L	#$4d214b21,(mod_id,A0)
 pt_0ED4:
+	JSR	pt_WideSaveId		;41 wide module: all channels, own id
 	TST.W	dat_FileSizeMode
 	BNE.S	pt_CheckSampleName
 	TST.L	dat_XPKWriteActive
@@ -1906,8 +1919,7 @@ pt_CheckSampleName:
 	BSR.W	pt_FileOpenCheck
 	BNE.W	pt_DrawWaveform
 pt_0ED6:
-	BSR.W	pt_WriteFileData
-	BNE.S	pt_CheckCloseAndBranch
+	JSR	pt_FtrHead41
 	MOVE.W	(dat_CurrentSample,PC),dat_FileSizeWord
 	MOVEQ	#1,D6
 pt_0ED7:
@@ -1923,6 +1935,9 @@ pt_0ED8:
 	ADDQ.B	#1,D6
 	CMP.B	#$20,D6
 	BNE.S	pt_0ED7
+	JSR	pt_FtrTail41		;170c6: ;41 block PT4X, footer
+	BNE.S	pt_CheckCloseAndBranch
+	JSR	pt_ChgSaved41
 	BSR.W	pt_CheckCanClose
 	MOVE.W	(dat_FileSizeWord,PC),dat_CurrentSample
 	TST.W	dat_FileSizeMode
@@ -1935,7 +1950,7 @@ pt_0ED9:
 pt_0EDA:
 	BSR.W	pt_DrawSampleHex
 	BSR.W	pt_ClearStatusMsg
-	JSR	pt_Efx8SaveNote
+	JMP	pt_Efx8SaveNote		;170ee: ;41 tail call as the original JMP
 	NOP
 	NOP
 dat_FileSizeWord:
@@ -1974,7 +1989,7 @@ pt_0EDF:
 	RTS
 pt_0EE0:
 	BSR.W	pt_WriteFileData
-	TST.B	dat_FileHandleVar
+	JSR	pt_SmpWrChk41
 	BEQ.S	pt_ReturnFromSub
 	LEA	SECSTRT_4,A0
 	MOVE.W	D6,D1
@@ -2009,7 +2024,7 @@ pt_OpenFileWrite:
 	MOVEA.L	(dat_DosLibBase,PC),A6
 	MOVE.L	#dat_FileNameBuf,D1
 	MOVE.L	#$000003ee,D2
-	JSR	(-30,A6)
+	JSR	pt_OpenSave41		;41 keeps the old file until the new one is whole
 	MOVE.L	D0,D7
 	BEQ.S	pt_FileOpFailed
 pt_FileOpenOK:
@@ -2021,8 +2036,8 @@ pt_WriteFileData:
 	MOVE.L	dat_FileWriteAddr,D2
 	MOVE.L	dat_FileWriteSize,D3
 	BSR.S	pt_DoWrite
-	TST.L	D0
-	BEQ.S	pt_FileOpFailed
+	CMP.L	D3,D0
+	BNE.S	pt_FileOpFailed
 	MOVEQ	#0,D0
 	RTS
 pt_FileOpFailed:
@@ -2039,13 +2054,13 @@ pt_CloseFileOK:
 pt_CloseFile:
 	MOVEA.L	(dat_DosLibBase,PC),A6
 	MOVE.L	D7,D1
-	JMP	(-36,A6)
+	JMP	pt_CloseSave41
 pt_DoWrite:
 	TST.W	dat_FileSizeMode
 	BNE.S	pt_CountBytes
 	TST.L	dat_XPKWriteActive
 	BNE.S	pt_MemCopyWrite
-	JMP	(-48,A6)
+	JMP	pt_Write41
 pt_MemCopyWrite:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	MOVEA.L	(dat_XPKWritePtr,PC),A0
@@ -2126,7 +2141,7 @@ pt_0EF5:
 	JSR	(-42,A6)
 	BEQ.S	pt_0EF6
 	LEA	(dat_0F0A,PC),A0
-	JSR	pt_SetupEditScreen
+	JSR	pt_XpkFail41
 	BRA.W	pt_SetPalInitTime
 pt_0EF6:
 	MOVE.L	(dat_XPKWriteActive,PC),D0
@@ -2223,8 +2238,7 @@ pt_0EFB:
 	MOVE.L	(dat_XPKWriteActive,PC),D2
 	MOVE.L	(dat_0F06,PC),D3
 	MOVEA.L	(dat_DosLibBase,PC),A6
-	JSR	(-48,A6)
-	TST.L	D0
+	JSR	pt_PackWrite41
 	BNE.S	pt_0EFC
 	MOVE.L	(dat_ColorMapPtr,PC),D7
 	BSR.W	pt_CloseFile
@@ -2444,9 +2458,7 @@ pt_0F34:
 	MOVEA.L	(dat_ModulePtr,PC),A0
 	MOVEQ	#19,D0
 pt_0F35:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0F35
-	RTS
+	JMP	pt_SaveName41
 pt_0F36:
 	MOVEA.L	dat_SampleEditorPtr,A0
 	JSR	pt_CopyFilename
@@ -2457,9 +2469,7 @@ pt_0F36:
 	MOVEA.L	(dat_ModulePtr,PC),A0
 	MOVEQ	#19,D0
 pt_0F37:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0F37
-	RTS
+	JMP	pt_SaveName41
 pt_ClearStatusMsg:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	LEA	(str_EmptyLine,PC),A0
@@ -2485,7 +2495,7 @@ pt_CountMsgLen:
 	ADDQ.W	#1,D0
 	TST.B	(A1)+
 	BNE.S	pt_CountMsgLen
-	BSR.W	pt_DrawTextAt
+	JSR	pt_StatusDraw41
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 pt_PreKeyCheck:

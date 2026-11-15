@@ -886,8 +886,8 @@ pt_DiskWaitLoop:
 	RMB
 	BEQ.S	pt_DiskFormatMenu
 	JSR	pt_GetKeypress
-	MOVE.B	(dat_KeyCode,PC),D2
-	CMP.B	#$44,D2
+	JSR	pt_SmpVolKey41
+	NOP
 	BEQ.S	pt_DiskFormatMenu
 	LMB
 	BNE.S	pt_DiskWaitLoop

@@ -44,7 +44,7 @@ pt_Init:
 	MOVEA.L	ABSEXECBASE.W,A6
 	LEA	(str_PTProcessName,PC),A1
 	JSR	(-294,A6)
-	MOVE.L	D0,dat_DosBase
+	JSR	pt_DupChk41
 	SUBA.L	A1,A1
 	JSR	(-294,A6)
 	MOVE.L	D0,dat_ThisTask
@@ -137,10 +137,10 @@ dat_WBStartupMsg:
 str_PTProcessName:
 	DC.B	"ORS_PTProcess",0
 str_PTVersion:
-	DC.B	"Protracker V4.1.1",0,0,0,0,0,0,0
+	DC.B	"Protracker V4.1.2",0,0,0,0,0,0,0
 str_VersionTag:
 	DS.L	1
-	DC.B	"$VER: Protracker V4.1.1 (03.11.26)",0,0,0,0,0,0
+	DC.B	"$VER: Protracker V4.1.2 (14.11.26)",0,0,0,0,0,0
 	DS.L	1
 pt_CheckTempoUpdate:
 	TST.B	dat_TempoChanged
@@ -236,6 +236,7 @@ pt_001C:
 	MOVEQ	#2,D0
 	RTS
 pt_CheckSongChanged:
+	JSR	pt_ChgSync41
 	CMPI.L	#$43484721,dat_SongChangedMagic
 	BNE.S	pt_001E
 	BSR.S	pt_SaveConfirmDialog
@@ -693,8 +694,8 @@ pt_CopySpriteLoop:
 dat_SpriteDataPtr:
 	DS.L	1
 pt_SetVectorAud0:
-	MOVEA.L	ABSEXECBASE.W,A6
-	JSR	(-132,A6)
+	JSR	pt_VecOn41
+	NOP
 	MOVEA.L	dat_IntuiLibBase,A1
 	MOVE.L	#dat_IntHandler0,D0
 	MOVEA.L	#$fffffea4,A0
@@ -726,8 +727,8 @@ pt_IntVecsSet:
 	JSR	(-138,A6)
 	RTS
 pt_RestoreIntVecs:
-	MOVEA.L	ABSEXECBASE.W,A6
-	JSR	(-132,A6)
+	JSR	pt_VecOff41
+	NOP
 	MOVEA.L	dat_IntuiLibBase,A1
 	MOVE.L	(dat_OldIntVec0,PC),D0
 	MOVEA.L	#$fffffea4,A0
@@ -1326,6 +1327,9 @@ pt_RpAudIntChunkFirst:
 	MOVE.W	D1,(n_pt4_chunkvol,A1)
 	MOVE.W	D1,(n_pt4_volmul,A1)
 	BSR.S	pt_RpAudIntScaleVol
+	EXG	D0,D1
+	JSR	pt_SndHwVol41
+	EXG	D0,D1
 	MOVE.W	D1,(aud_VOL,A6)
 	MOVE.W	(n_period,A1),(aud_PER,A6)
 	MOVE.W	(n_pt4_dmaset,A1),(150,A5)
@@ -1351,6 +1355,9 @@ pt_RpAudIntChunkNext:
 	MOVE.W	(n_pt4_chunkvol,A1),D1
 	MOVE.W	D1,(n_pt4_volmul,A1)
 	BSR.S	pt_RpAudIntScaleVol
+	EXG	D0,D1
+	JSR	pt_SndHwVol41
+	EXG	D0,D1
 	MOVE.W	D1,(aud_VOL,A6)
 	MOVE.L	(n_pt4_chunkptr,A1),D1
 	BEQ.S	pt_RpAudIntChunkDone
@@ -1394,17 +1401,24 @@ pt_RpAudIntStartVol:
 	MOVEQ	#80,D1
 	JSR	pt_WaitDMASync
 pt_RpAudIntStartVol2:
+	IFD	DEBUGFX
+	JSR	dbg_NsIrq1
+	ENDC
 	MOVEQ	#0,D0
 	MOVE.B	(n_volume,A1),D0
 	MULU.W	(n_pt4_volscale,A1),D0
 	ADD.W	#$0020,D0
 	LSR.W	#6,D0
+	JSR	pt_SndHwVol41
 	MOVE.W	D0,(aud_VOL,A6)
 	MOVE.W	(n_pt4_dmaset,A1),(150,A5)
 	MOVE.W	(n_pt4_intmask,A1),(156,A5)
 	MOVE.W	(n_period,A1),(aud_PER,A6)
 	BRA.S	pt_RpAudIntExit
 pt_RpAudIntStartLoop:
+	IFD	DEBUGFX
+	JSR	dbg_NsIrq2
+	ENDC
 	MOVE.W	(n_pt4_intmask,A1),(156,A5)
 	MOVE.W	(n_pt4_intmask,A1),(154,A5)
 	CLR.B	(n_pt4_dmawait,A1)
@@ -1415,6 +1429,9 @@ pt_RpAudIntExit:
 	MOVE.W	#$c000,(154,A5)
 	RTS
 pt_RpAudIntStop:
+	IFD	DEBUGFX
+	JSR	dbg_NsStop
+	ENDC
 	MOVE.W	#$ffff,D0
 pt_RpAudIntStopLoop:
 	MOVE.W	D0,D1
@@ -1541,7 +1558,7 @@ pt_RemCIATimerB:
 	MOVEQ	#0,D0
 pt_RemCIAVector:
 	LEA	(dat_CIAIntServer,PC),A1
-	MOVEQ	#0,D0
+	NOP
 	JSR	(-12,A6)
 	RTS
 str_CIAResource:

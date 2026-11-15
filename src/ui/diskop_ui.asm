@@ -91,8 +91,8 @@ pt_01C2:
 	DBF	D0,pt_01C2
 	MOVE.L	#dat_FileNameBuf,D1
 	MOVEA.L	dat_DosLibBase,A6
-	JSR	(-120,A6)
-	BSR.W	pt_RestorePalette
+	JSR	pt_MkDir41
+	NOP
 	JSR	pt_ClearStatusMsg
 	BTST	#3,dat_UIStateFlag
 	BNE.S	pt_01C3
@@ -650,7 +650,7 @@ pt_SampleEdMode2:
 	BSR.W	pt_ClearButtonHitbox
 	BSR.W	pt_FileBrowserRefresh
 	BNE.W	pt_RestorePalette
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0001,dat_SampleEditorX
@@ -666,7 +666,7 @@ pt_SampleEdMode3:
 	BSR.W	pt_ClearButtonHitbox
 	BSR.W	pt_FileBrowserRefresh
 	BNE.W	pt_RestorePalette
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0004,dat_SampleEditorX
@@ -696,8 +696,7 @@ pt_0224:
 	MOVEA.L	dat_ModulePtr,A0
 	MOVEQ	#19,D0
 pt_0225:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0225
+	JSR	pt_SaveName41
 	MOVEA.L	(A7),A1
 	SUBQ.L	#1,A1
 pt_0226:
@@ -719,18 +718,18 @@ pt_0226:
 	JSR	(-30,A6)
 	MOVE.L	D0,dat_FileHandle
 	BNE.S	pt_0227
-	BRA.W	pt_RestorePaletteInit
+	JMP	pt_SaveSmpFail41
 pt_0227:
 	LEA	dat_12C2,A0
 	JSR	pt_ShowStatusMsg
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_0228,D2
 	MOVEQ	#16,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	dat_FileWriteAddr,D2
 	MOVE.L	#$00000100,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	JSR	(-36,A6)
 	CLR.L	dat_FileHandle
@@ -751,7 +750,7 @@ pt_SampleEdMode0Alt:
 	BSR.W	pt_ClearButtonHitbox
 	BSR.W	pt_FileBrowserRefresh
 	BNE.W	pt_RestorePalette
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0002,dat_SampleEditorX
@@ -759,15 +758,17 @@ pt_SampleEdMode0Alt:
 	JSR	pt_ShowStatusMsg
 	BRA.W	pt_RestorePalette
 pt_BtnDiskSaveExe:
-	BTST	#5,dat_ModeFlags
+	JSR	pt_ExeWide41
+	BNE.S	pt_ExeNo41
 	NOP
 	BSR.W	pt_SampleEditorMode0
 	LEA	dat_12D9,A0
 	BSR.W	pt_ShowYesNoDialog
 	BEQ.S	pt_022B
+pt_ExeNo41:
 	RTS
 pt_022B:
-	JSR	pt_0EB9
+	JSR	pt_SmxExe		;03e14: ;41 samples 32-63
 	MOVE.W	#$0002,dat_SampleEditorX
 	JSR	pt_ClearStatusMsg
 	BTST	#3,dat_UIStateFlag
@@ -786,7 +787,7 @@ pt_SampleEdMode5:
 	BSR.W	pt_ClearButtonHitbox
 	BSR.W	pt_FileBrowserRefresh
 	BNE.W	pt_RestorePalette
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0006,dat_SampleEditorX
@@ -809,8 +810,7 @@ pt_022F:
 	MOVEA.L	dat_ModulePtr,A0
 	MOVEQ	#19,D0
 pt_0230:
-	MOVE.B	(A0)+,(A1)+
-	DBF	D0,pt_0230
+	JSR	pt_SaveName41
 	MOVEA.L	(A7),A1
 	SUBQ.L	#1,A1
 pt_0231:
@@ -832,14 +832,14 @@ pt_0231:
 	JSR	(-30,A6)
 	MOVE.L	D0,dat_FileHandle
 	BNE.S	pt_0232
-	BRA.W	pt_RestorePaletteInit
+	JMP	pt_SaveSmpFail41
 pt_0232:
 	LEA	dat_12C1,A0
 	JSR	pt_ShowStatusMsg
 	MOVE.L	dat_FileHandle,D1
-	MOVE.L	#dat_0235,D2
+	JSR	pt_PatHdr41
 	MOVEQ	#16,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_PatternDataBuf5,D2
 	MOVE.L	#$00000400,D3
@@ -847,7 +847,7 @@ pt_0232:
 	BNE.S	pt_0233
 	MOVE.L	#$00000800,D3
 pt_0233:
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	JSR	(-36,A6)
 	CLR.L	dat_FileHandle
@@ -888,7 +888,7 @@ pt_EnterSampleEditMode:
 	BSR.W	pt_ClearButtonHitbox
 	BSR.W	pt_FileBrowserRefresh
 	BNE.W	pt_RestorePalette
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0003,dat_SampleEditorX
@@ -902,7 +902,7 @@ pt_BtnDiskSaveModule:
 	BEQ.S	pt_023B
 	RTS
 pt_023B:
-	JSR	pt_LoadModule
+	JSR	pt_SmxSave		;0403c: ;41 samples 32-63
 	MOVE.W	#$0003,dat_SampleEditorX
 	JSR	pt_ClearStatusMsg
 	BTST	#3,dat_UIStateFlag
@@ -922,7 +922,7 @@ pt_SampleEdMode6:
 	BEQ.S	pt_023E
 	BRA.W	pt_RestorePalette
 pt_023E:
-	MOVE.W	(24,A5),D0
+	JSR	pt_DiskTopRestore
 	BSR.W	pt_DrawSampleEdAndUpdate
 	BSR.W	pt_ScanButtonHitbox
 	MOVE.W	#$0005,dat_SampleEditorX
@@ -955,7 +955,7 @@ pt_0241:
 	JSR	(-30,A6)
 	MOVE.L	D0,dat_FileHandle
 	BNE.S	pt_0242
-	BRA.W	pt_RestorePaletteInit
+	JMP	pt_SaveSmpFail41
 pt_0242:
 	LEA	dat_12BF,A0
 	JSR	pt_ShowStatusMsg
@@ -963,13 +963,13 @@ pt_0242:
 	BEQ.S	pt_0243
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	#dat_0245,D2
-	MOVEQ	#104,D3
-	JSR	(-48,A6)
+	MOVEQ	#98,D3
+	JSR	pt_Write41
 pt_0243:
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	dat_FileWriteAddr,D2
 	MOVE.L	dat_FileWriteSize,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	dat_FileHandle,D1
 	JSR	(-36,A6)
 	CLR.L	dat_FileHandle
@@ -995,8 +995,8 @@ dat_0248:
 	DC.L	$00000018
 dat_0249:
 	DS.L	6
-	DC.L	$414e4e4f,$00000010,$50524f54,$5241434b
-	DC.L	$45520042,$4f445900
+	DC.L	$414e4e4f,$0000000a
+	DC.B	"PROTRACKER","BODY"
 dat_024A:
 	DS.L	1
 pt_ShowFileSelector:
@@ -1605,8 +1605,9 @@ pt_LoadSampleEditor:
 	LEA	dat_12D2,A0
 	JSR	pt_ShowStatusMsg
 	MOVE.L	dat_PatternIndexBuf,D1
-	MOVE.L	#dat_14ED,D2
-	JSR	(-114,A6)
+	JSR	pt_InfoDo41
+	NOP
+	NOP
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	LEA	dat_14ED,A0
 	MOVE.L	(12,A0),D0

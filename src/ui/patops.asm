@@ -394,8 +394,7 @@ pt_0BF0:
 pt_0BF1:
 	MOVE.W	(dat_EditCursorCol,PC),D0
 	BSR.W	pt_GetPatternAddr
-	MOVE.W	(dat_EditCursorRow,PC),D0
-	LSL.W	#4,D0
+	JSR	pt_EdRowOfs41
 	ADDA.W	D0,A0
 	MOVE.W	(dat_DisplayFieldSize,PC),D0
 	SUBQ.W	#1,D0
@@ -533,8 +532,7 @@ pt_0C02:
 pt_0C03:
 	MOVE.W	(dat_EditCursorCol,PC),D0
 	BSR.W	pt_GetPatternAddr
-	MOVE.W	(dat_EditCursorRow,PC),D0
-	LSL.W	#4,D0
+	JSR	pt_EdRowOfs41
 	ADDA.W	D0,A0
 	MOVE.W	(dat_DisplayFieldSize,PC),D0
 	SUBQ.W	#1,D0
@@ -556,11 +554,12 @@ pt_0C06:
 	ADDA.L	D3,A0
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_0C07
-	MOVE.W	(32,A0),D1
-	MOVE.W	(34,A0),D2
+	JSR	pt_RotWrap41
+	BRA.S	pt_0C07b
 pt_0C07:
 	MOVE.W	(16,A0),D1
 	MOVE.W	(18,A0),D2
+pt_0C07b:
 	TST.B	dat_TrackScrollRotate
 	BNE.S	pt_0C08
 	MOVEQ	#0,D1
@@ -694,8 +693,7 @@ pt_0C16:
 pt_0C17:
 	MOVE.W	(dat_EditCursorCol,PC),D0
 	BSR.W	pt_GetPatternAddr
-	MOVE.W	(dat_EditCursorRow,PC),D0
-	LSL.W	#4,D0
+	JSR	pt_EdRowOfs41
 	ADDA.W	D0,A0
 	MOVE.W	(dat_DisplayFieldSize,PC),D0
 	SUBQ.W	#1,D0
@@ -804,8 +802,7 @@ pt_0C24:
 pt_0C25:
 	MOVE.W	(dat_EditCursorCol,PC),D0
 	BSR.W	pt_GetPatternAddr
-	MOVE.W	(dat_EditCursorRow,PC),D0
-	LSL.W	#4,D0
+	JSR	pt_EdRowOfs41
 	ADDA.W	D0,A0
 	MOVE.W	(dat_DisplayFieldSize,PC),D0
 	SUBQ.W	#1,D0
@@ -1029,7 +1026,7 @@ pt_TransposeUpLast:
 pt_TransposeUpTrack:
 	MOVEQ	#63,D6
 	MOVEA.L	A0,A3
-	MOVE.W	dat_CurrentSample,D3
+	JSR	pt_SmxCurD3		;13430: ;41 logical sample
 	TST.B	dat_PlaybackState
 	BEQ.S	pt_0C54
 	MOVEQ	#0,D3
@@ -1133,7 +1130,7 @@ pt_TransposeDownLast:
 pt_TransposeDownTrack:
 	MOVEQ	#63,D6
 	MOVEA.L	A0,A3
-	MOVE.W	dat_CurrentSample,D3
+	JSR	pt_SmxCurD3		;13554: ;41 logical sample
 	TST.B	dat_PlaybackState
 	BEQ.S	pt_0C63
 	MOVEQ	#0,D3
@@ -1263,7 +1260,7 @@ pt_ExtractAndRedraw:
 	BRA.W	pt_PatViewDrawAll
 pt_ExtractPatternNibbles:
 	MOVEQ	#63,D0
-	MOVE.W	dat_CurrentSample,D3
+	JSR	pt_SmxCurD3		;136ce: ;41 logical sample
 	BEQ.W	pt_SelectDiskMsg
 pt_0C79:
 	MOVE.B	(2,A0),D1

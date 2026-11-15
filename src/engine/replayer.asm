@@ -1,6 +1,8 @@
 pt_RpInterrupt:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
+	DK	'I'
 	BSR.S	pt_RpDispatch
+	DK	'i'
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 pt_RpDispatch:
@@ -60,6 +62,7 @@ pt_RpSetVolumeDirect:
 	MULU.W	(n_pt4_volscale,A6),D0
 	ADD.W	#$0020,D0
 	LSR.W	#6,D0
+	JSR	pt_SndHwVolA5
 	MOVE.W	D0,(aud_VOL,A5)
 	RTS
 pt_RpSetVolumeChunked:
@@ -81,6 +84,7 @@ pt_RpSetVolumeMul:
 	BNE.S	pt_RpSetVolumeWrite
 	MOVEQ	#1,D0
 pt_RpSetVolumeWrite:
+	JSR	pt_SndHwVolA5
 	MOVE.W	D0,(aud_VOL,A5)
 	MOVE.W	(A7)+,D2
 	RTS
@@ -119,10 +123,11 @@ pt_RpGetNewNoteLoop:
 	DBF	D7,pt_RpGetNewNoteLoop
 	BRA.W	pt_RpNextRow
 pt_RpMetronome:
-	ADDQ.B	#1,D2
+	JSR	pt_RpVoiceNo41		;41 d2 = voice number of a6, c = none
+	BCS.S	.x
 	CMP.B	dat_RpMetroChannel,D2
 	BEQ.S	pt_RpMetronomeInterval
-	RTS
+.x:	RTS
 pt_RpMetronomeInterval:
 	MOVE.B	dat_RpMetroInterval,D2
 	BNE.S	pt_RpMetronomeRow
@@ -168,15 +173,7 @@ pt_RpReadNote:
 	TST.B	D2
 	BEQ.W	pt_RpSetRegs
 	MOVEQ	#0,D3
-	LEA	(dat_RpSampleStarts,PC),A1
-	MOVE.L	dat_RpChunkedSamples,D4
-	BTST	D2,D4
-	SNE	(n_pt4_chunked,A6)
-	MOVE.W	D2,D4
-	MOVE.B	D2,(n_pt4_samplenum,A6)
-	SUBQ.L	#1,D2
-	LSL.L	#2,D2
-	MULU.W	#s_SIZEOF,D4
+	JSR	pt_SmxNote		;1c73e: ;41 samples 32-63
 	MOVE.L	(0,A1,D2.L),(n_pt4_samplestart,A6)
 	MOVE.L	(n_pt4_samplestart,A6),(n_start,A6)
 	MOVE.W	(0,A3,D4.L),(n_pt4_samplelen,A6)
@@ -193,8 +190,8 @@ pt_RpReadNote:
 	MOVE.L	(n_start,A6),D2
 	ASL.W	#1,D3
 	ADD.L	D3,D2
-	MOVE.L	D2,(n_loopstart,A6)
-	MOVE.L	D2,(n_wavestart,A6)
+	JSR	pt_LoopSet41
+	NOP
 	MOVE.W	(4,A3,D4.L),D0
 	ADD.W	(6,A3,D4.L),D0
 	MOVE.W	D0,(n_length,A6)
@@ -255,7 +252,7 @@ pt_RpSetPeriodFound:
 	AND.B	#$0f,D1
 	MULU.W	#$004a,D1
 	ADDA.L	D1,A1
-	MOVE.W	(0,A1,D0.W),(n_period,A6)
+	JSR	pt_PerLookup41
 	MOVEM.L	(A7)+,D0-D1/A0-A1
 	MOVE.W	(n_cmd,A6),D0
 	AND.W	#$0ff0,D0
@@ -275,11 +272,14 @@ pt_RpSetPeriodTrem:
 	BRA.W	pt_RpCheckMoreEfx2
 pt_RpStartDma:
 	MOVEM.L	D0-D1/A0,-(A7)
-	JSR	pt_RpDmaWait
-	MOVE.W	dat_RpDmaChanMask,D0
+	JSR	pt_RpDmaWait41
+	JSR	pt_RpChMask41
 	MOVE.W	(n_pt4_chanbit,A6),D1
 	BTST	D1,D0
 	BEQ.S	pt_RpStartDmaDone
+	IFD	DEBUGFX
+	JSR	dbg_NsStart
+	ENDC
 	ST	(n_pt4_dmawait,A6)
 	CLR.W	(n_pt4_dmacount,A6)
 	CMPI.W	#$0002,(n_length,A6)
@@ -309,7 +309,7 @@ pt_RpStartDmaDone:
 pt_RpStartChunked:
 	MOVEM.L	D0-D2/A0-A1,-(A7)
 	MOVE.W	#$4000,INTENA
-	MOVE.W	dat_RpDmaChanMask,D1
+	JSR	pt_RpChMaskD1_41
 	MOVE.W	(n_pt4_chanbit,A6),D0
 	BTST	D0,D1
 	BEQ.W	pt_RpStartChunkedDone
@@ -392,9 +392,11 @@ pt_RpNextRow:
 	BEQ.S	pt_RpNextRowAdvance
 	JSR	pt_PatViewSetRowReplayer
 pt_RpNextRowAdvance:
-	MOVE.L	(dat_RpPatternPos,PC),D0
-	LSR.L	#4,D0
-	MOVE.W	D0,dat_PatternPosition
+	JSR	pt_RpRowPos41
+	NOP
+	NOP
+	NOP
+	NOP
 	MOVEQ	#4,D0
 	MULU.W	dat_RpNumChannels,D0
 	ADD.L	D0,dat_RpPatternPos
@@ -462,9 +464,11 @@ pt_RpNextPosition:
 	BEQ.S	pt_RpExit
 	JSR	pt_StopPlayback
 	CLR.W	dat_StopRequest
-	MOVE.L	(dat_RpPatternPos,PC),D0
-	LSR.L	#4,D0
-	MOVE.W	D0,dat_PatternPosition
+	JSR	pt_RpRowPos41
+	NOP
+	NOP
+	NOP
+	NOP
 pt_RpExit:
 	TST.B	dat_PosJumpFlag
 	BNE.W	pt_RpNextPosition
@@ -556,10 +560,10 @@ pt_RpArpeggioLoop:
 pt_RpArpeggioSet:
 	IFD	DEBUGFX
 	JSR	dbg_FxPer2
-	ELSE
-	MOVE.W	D2,(aud_PER,A5)
-	ENDC
 	RTS
+	ELSE
+	JMP	pt_PerRaw41
+	ENDC
 pt_RpFinePortaUp:
 	TST.L	dat_RpCounter
 	BEQ.S	pt_RpFinePortaUp2
@@ -573,11 +577,13 @@ pt_RpPortaUp:
 	MOVE.B	#$ff,dat_LowMask
 	SUB.W	D0,(n_period,A6)
 	MOVE.W	(n_period,A6),D0
-	AND.W	#$0fff,D0
-	CMP.W	#$0071,D0
+	JSR	pt_PortaMin41
+	NOP
 	BPL.S	pt_RpPortaUpSet
-	ANDI.W	#$f000,(n_period,A6)
-	ORI.W	#$0071,(n_period,A6)
+	JSR	pt_PortaMinSet41
+	NOP
+	NOP
+	NOP
 pt_RpPortaUpSet:
 	MOVE.W	(n_period,A6),D0
 	AND.W	#$0fff,D0
@@ -596,11 +602,13 @@ pt_RpPortaDown:
 	MOVE.B	#$ff,dat_LowMask
 	ADD.W	D0,(n_period,A6)
 	MOVE.W	(n_period,A6),D0
-	AND.W	#$0fff,D0
-	CMP.W	#$0358,D0
+	JSR	pt_PortaMax41
+	NOP
 	BMI.S	pt_RpPortaDownSet
-	ANDI.W	#$f000,(n_period,A6)
-	ORI.W	#$0358,(n_period,A6)
+	JSR	pt_PortaMaxSet41
+	NOP
+	NOP
+	NOP
 pt_RpPortaDownSet:
 	MOVE.W	(n_period,A6),D0
 	AND.W	#$0fff,D0
@@ -632,8 +640,7 @@ pt_RpSetTonePortaFtu:
 	BEQ.S	pt_RpSetTonePortaDir
 	SUBQ.W	#2,D0
 pt_RpSetTonePortaDir:
-	MOVE.W	(0,A0,D0.W),D2
-	MOVEA.L	(A7)+,A0
+	JSR	pt_TpTarget41
 	MOVE.W	D2,(n_wantedperiod,A6)
 	MOVE.W	(n_period,A6),D0
 	CLR.B	(n_toneportdirec,A6)
@@ -697,8 +704,7 @@ pt_RpGlissLoop:
 pt_RpGlissFound:
 	MOVE.W	(0,A0,D0.W),D2
 pt_RpGlissSkip:
-	MOVE.W	D2,(aud_PER,A5)
-	RTS
+	JMP	pt_PerRaw41
 pt_RpVibrato:
 	MOVE.B	(n_cmdlo,A6),D0
 	BEQ.S	pt_RpVibrato2
@@ -838,6 +844,7 @@ pt_RpTremoloWrite:
 	MULU.W	(dat_RpMasterVol,PC),D0
 	ADD.L	#$00000020,D0
 	LSR.L	#6,D0
+	JSR	pt_SndHwVolA5
 	IFD	DEBUGFX
 	JSR	dbg_FxVol0
 	ELSE
@@ -858,8 +865,7 @@ pt_RpSampleOffset:
 pt_RpSampleOffset2:
 	MOVE.B	(n_sampleoffset,A6),D0
 	LSL.L	#7,D0
-	CMP.W	(n_length,A6),D0
-	BGE.S	pt_RpSampleOffsetEnd
+	JSR	pt_OfsCmp41
 	MOVE.W	(n_pt4_samplelen,A6),D1
 	SUB.W	D0,D1
 	MOVE.W	D1,(n_length,A6)
@@ -924,7 +930,7 @@ pt_RpPatternBreak:
 	BTST	#5,dat_ModeFlags
 	BNE.S	pt_RpPatternBreak4
 	LSL.W	#1,D0
-	CMP.B	#$7e,D0
+	CMP.W	#$7e,D0
 	BHI.S	pt_RpPositionJumpSet
 	BRA.S	pt_RpPatternBreakSet
 pt_RpPatternBreak4:
@@ -1192,7 +1198,7 @@ pt_RpDoRetrig:
 	TST.B	(n_pt4_chunked,A6)
 	BNE.S	pt_RpDoRetrigChunked
 	MOVE.L	A0,-(A7)
-	MOVE.W	dat_RpDmaChanMask,D0
+	JSR	pt_RpChMask41
 	MOVE.W	(n_pt4_chanbit,A6),D1
 	BTST	D1,D0
 	BEQ.S	pt_RpDoRetrigDone

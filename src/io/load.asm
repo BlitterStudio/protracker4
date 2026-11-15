@@ -326,7 +326,7 @@ pt_09B0:
 	MOVE.L	D0,(A4)
 	MOVE.L	D0,dat_FileWriteAddr
 	BNE.S	pt_09B1
-	LEA	dat_1339,A0
+	JSR	pt_LoadNoMem41
 	JSR	pt_ShowStatusMsg
 	BRA.W	pt_SetupPaletteMode
 pt_09B1:
@@ -345,7 +345,7 @@ pt_09B1:
 	MOVE.L	D0,(A4)
 	MOVE.L	D0,dat_1351
 	BNE.S	pt_09B2
-	CLR.L	(4,A0)
+	JSR	pt_LoadNoEnv41
 	LEA	dat_133A,A0
 	JSR	pt_ShowStatusMsg
 	BRA.W	pt_SetupPaletteMode
@@ -484,7 +484,7 @@ pt_09C3:
 	ADD.L	D0,D0
 	MOVE.L	D0,dat_FileWriteSize
 	MOVE.L	D0,dat_024A
-	ADD.L	#$00000060,D0
+	ADD.L	#$0000005a,D0
 	MOVE.L	D0,dat_0246
 	MOVEQ	#0,D0
 	MOVE.W	(s_length,A0),D0
@@ -705,7 +705,7 @@ pt_09E5:
 	MOVE.L	dat_ScreenBufPtr,D1
 	MOVEA.L	D1,A0
 	JSR	(-72,A6)
-	JSR	pt_ClearStatusMsg
+	JSR	pt_DelDone41
 	JSR	pt_SetPaletteBright
 	JSR	pt_SavePaletteState
 	BTST	#3,dat_UIStateFlag
@@ -738,29 +738,29 @@ pt_09EA:
 	JSR	pt_SavePaletteState
 	JSR	pt_SetPaletteSong
 	MOVEA.L	dat_SampleEditorPtr,A0
-	JSR	pt_CopyFilename
+	JSR	pt_RenPath41
 	LEA	dat_ScopeWorkBuf2,A0
 	MOVEQ	#23,D0
 pt_09EB:
 	MOVE.B	(A0)+,(A1)+
 	DBF	D0,pt_09EB
 	LEA	dat_FileNameBuf,A0
-	LEA	dat_152E,A1
+	LEA	dat_FilePathBuf2,A1
 pt_09EC:
 	MOVE.B	(A0)+,(A1)+
 	BNE.S	pt_09EC
 	MOVEA.L	dat_SampleEditorPtr,A0
-	JSR	pt_CopyFilename
+	JSR	pt_RenOld41
 	LEA	dat_ScopeBuf1,A0
 	MOVEQ	#29,D0
 pt_09ED:
 	MOVE.B	(A0)+,(A1)+
 	DBF	D0,pt_09ED
 	MOVE.L	#dat_FileNameBuf,D1
-	MOVE.L	#dat_152E,D2
+	MOVE.L	#dat_FilePathBuf2,D2
 	MOVEA.L	dat_DosLibBase,A6
 	JSR	(-78,A6)
-	JSR	pt_RestorePalette
+	JSR	pt_RenDone41
 	JSR	pt_ClearStatusMsg
 	BTST	#3,dat_UIStateFlag
 	BNE.S	pt_09EE
@@ -772,6 +772,7 @@ dat_09EF:
 	DC.B	10,10
 	DC.B	"   RENAME FILE AS:",0,0
 pt_09F0:
+	JSR	pt_ChgSync41
 	CMPI.L	#$43484721,dat_SongChangedMagic
 	BNE.S	pt_09F1
 	JSR	pt_SaveConfirmDialog
@@ -779,7 +780,7 @@ pt_09F0:
 	BEQ.S	pt_09F1
 	RTS
 pt_09F1:
-	CLR.L	dat_SongChangedMagic
+	JSR	pt_ChgClear41
 	CLR.W	dat_XpkLibFlag
 	CLR.W	dat_SongSaveChecksum
 	BSR.W	pt_ClearBufferLoop
@@ -812,7 +813,7 @@ pt_09F3:
 	MOVEQ	#4,D3
 	JSR	(-42,A6)
 	CMP.L	#$00000004,D0
-	BNE.W	pt_CloseAndInitModule
+	BNE.W	pt_ShortFileHook
 	LEA	dat_FileIOBuf,A0
 	CMPI.L	#$464f524d,(A0)
 	BEQ.W	pt_0A06
@@ -836,20 +837,7 @@ pt_09F5:
 	MOVE.L	dat_ModulePtr,D2
 	MOVE.L	#$0000043c,D3
 	BSR.W	pt_CheckModHeader
-	MOVEA.L	dat_ModulePtr,A0
-	LEA	(mod_positions,A0),A0
-	MOVEQ	#0,D0
-	MOVE.B	(-1,A0),D0
-	MOVEQ	#0,D3
-pt_09F6:
-	CMP.B	(A0)+,D3
-	BHI.S	pt_09F7
-	MOVE.B	(-1,A0),D3
-pt_09F7:
-	DBF	D0,pt_09F6
-	ADDQ.W	#1,D3
-	LSL.L	#8,D3
-	LSL.L	#2,D3
+	JSR	pt_SongPats41
 	MOVE.L	dat_FileHandle,D1
 	MOVE.L	dat_ModulePtr,D2
 	ADD.L	#$0000043c,D2
@@ -890,6 +878,7 @@ pt_09FA:
 	MOVE.L	dat_FileHandle,D1
 	MOVEA.L	dat_DosLibBase,A6
 	JSR	(-36,A6)
+	CLR.L	dat_FileHandle
 	CLR.L	dat_RecordMode
 	CLR.W	dat_XpkLibFlag
 	BSR.W	pt_InitNewModule
@@ -915,6 +904,13 @@ pt_09FD:
 	MOVE.L	#$00010001,D1
 	MOVEA.L	ABSEXECBASE.W,A6
 	JSR	(-198,A6)
+	IFD	DEBUGAUTO
+	MOVE.L	dat_FileHandle,dbg_AllocFh
+	TST.W	dbg_AllocDeny
+	BEQ.S	.ok
+	MOVEQ	#0,D0
+.ok:
+	ENDC
 	MOVE.L	D0,dat_ModulePtr
 	BNE.S	pt_09FE
 	JMP	pt_SetupPaletteMode
@@ -1135,8 +1131,8 @@ pt_r100e2:
 	MOVE.W	#$0001,dat_DiskOpState
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	BSR.W	pt_ClearScreenBuf2
-	MOVEM.L	(A7)+,D0-D7/A0-A6
-	BRA.W	pt_09F2
+	JMP	pt_LdSong2Buf41
+	NOP
 pt_0A12:
 	LEA	dat_0F18,A0
 	BSR.W	pt_ShowStatusMsg

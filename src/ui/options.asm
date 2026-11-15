@@ -1051,7 +1051,7 @@ pt_BtnM2sPattern:
 	BSR.W	pt_UpdateSampleListUI
 	TST.W	dat_PaletteDirtyFlag
 	BNE.W	pt_UpdateSampleDisp
-	CMP.B	(dat_SampleVolume,PC),D0
+	CMP.B	(dat_SampleEditState+3,PC),D0
 	BLS.S	pt_0AA9
 	MOVE.L	(dat_SampleEditState,PC),D0
 pt_0AA9:

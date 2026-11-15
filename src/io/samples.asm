@@ -43,15 +43,23 @@ pt_SmpWav:
 	MOVEQ	#0,D6			; rate
 	SUBA.L	A2,A2			; data ptr
 	MOVEQ	#0,D7			; data len
-.chunk:	CMPA.L	A3,A1
-	BCC.S	.done
+.chunk:	LEA	8(A1),A0
+	CMPA.L	A3,A0			; header must fit
+	BHI.S	.done
 	MOVE.L	(A1)+,D0		; chunk id
 	MOVE.L	(A1)+,D1		; len (le)
 	ROR.W	#8,D1
 	SWAP	D1
 	ROR.W	#8,D1
-	CMP.L	#"fmt ",D0
+	MOVE.L	A3,D2
+	SUB.L	A1,D2
+	CMP.L	D2,D1			; unsigned: neg = huge
+	BLS.S	.lenok
+	MOVE.L	D2,D1			; clip to file
+.lenok:	CMP.L	#"fmt ",D0
 	BNE.S	.ndata
+	CMP.L	#16,D1
+	BCS.S	.next
 	MOVE.W	2(A1),D4		; ch (le)
 	ROR.W	#8,D4
 	MOVE.L	4(A1),D6		; rate (le)
@@ -77,20 +85,22 @@ pt_SmpWav:
 	MOVE.L	A3,D0
 	SUB.L	A2,D0
 	CMP.L	D0,D7
-	BLS.S	.lenok
+	BLS.S	.ok
 	MOVE.L	D0,D7
-.lenok:	CMP.W	#16,D5
+.ok:	TST.L	D7
+	BEQ.W	pt_SmpBad
+	CMP.W	#16,D5
 	BEQ.S	.w16
 	CMP.W	#8,D5
 	BNE.W	pt_SmpBad
-; 8 bit unsigned -> signed, stereo averaged
-	BSR.W	pt_SmpMono8
+; 8 bit unsigned -> signed, then stereo averaged
 	MOVEA.L	A2,A0
 	MOVE.L	D7,D0
 	BEQ.W	pt_SmpBad
 .u8:	EORI.B	#$80,(A0)+
 	SUBQ.L	#1,D0
 	BNE.S	.u8
+	BSR.W	pt_SmpMono8
 	BSR.W	pt_SmpRaw8		; type 2, decimates > 28 kHz itself
 	BRA.W	pt_SmpNote
 .w16:	BSR.W	pt_SmpSwap16		; le -> be
@@ -109,12 +119,20 @@ pt_SmpAiff:
 	MOVEQ	#0,D6
 	SUBA.L	A2,A2
 	MOVEQ	#0,D7
-.chunk:	CMPA.L	A3,A1
-	BCC.S	.done
+.chunk:	LEA	8(A1),A0
+	CMPA.L	A3,A0
+	BHI.S	.done
 	MOVE.L	(A1)+,D0
 	MOVE.L	(A1)+,D1
-	CMP.L	#"COMM",D0
+	MOVE.L	A3,D2
+	SUB.L	A1,D2
+	CMP.L	D2,D1
+	BLS.S	.lenok
+	MOVE.L	D2,D1
+.lenok:	CMP.L	#"COMM",D0
 	BNE.S	.nssnd
+	CMP.L	#18,D1
+	BCS.S	.next
 	MOVE.W	(A1),D4			; ch
 	MOVE.W	6(A1),D5		; bits
 ; rate: 80 bit extended, exp.w (bias 16383), mantissa at 10(a1)
@@ -133,16 +151,22 @@ pt_SmpAiff:
 .rok:	BRA.S	.next
 .nssnd:	CMP.L	#"SSND",D0
 	BNE.S	.next
+	CMP.L	#8,D1
+	BCS.S	.next
 	MOVE.L	(A1),D0			; ofs
-	LEA	8(A1),A2
-	ADDA.L	D0,A2
 	MOVE.L	D1,D7
 	SUBQ.L	#8,D7
+	CMP.L	D7,D0			; past the chunk
+	BHI.S	.next
+	BTST	#0,D0			; odd data address
+	BNE.S	.next
+	LEA	8(A1),A2
+	ADDA.L	D0,A2
 	SUB.L	D0,D7
 .next:	ADDQ.L	#1,D1
 	BCLR	#0,D1
 	ADDA.L	D1,A1
-	BRA.S	.chunk
+	BRA.W	.chunk
 .done:	MOVE.L	A2,D0
 	BEQ.S	pt_SmpBad
 	TST.W	D4
@@ -150,9 +174,11 @@ pt_SmpAiff:
 	MOVE.L	A3,D0
 	SUB.L	A2,D0
 	CMP.L	D0,D7
-	BLS.S	.lenok
+	BLS.S	.ok
 	MOVE.L	D0,D7
-.lenok:	CMP.W	#16,D5
+.ok:	TST.L	D7
+	BEQ.S	pt_SmpBad
+	CMP.W	#16,D5
 	BEQ.S	.w16
 	CMP.W	#8,D5
 	BNE.S	pt_SmpBad
@@ -342,6 +368,58 @@ pt_LoadNamePtr41:			; a0 = name of current smp (as pt_09A8)
 	RTS
 smp_OldName:	DS.B	22
 	EVEN
+smp_Zero41:	DC.L	0
+
+;--- sample ops guards
+; mix: size of the result
+pt_MixClamp41:
+	CMP.L	#$fffe,D0
+	BLS.S	.r
+	MOVE.L	#$fffe,D0
+.r:	RTS
+
+; mix: d3 = loop count - 1, d1/d2 = source sizes, empty source = zeros
+pt_MixSetup41:
+	MOVE.L	dat_RecordBufPtr,D3
+	SUBQ.L	#1,D3
+	CMP.L	#$fffe,D1
+	BLS.S	.a
+	MOVE.L	#$fffe,D1
+.a:	CMP.L	#$fffe,D2
+	BLS.S	.b
+	MOVE.L	#$fffe,D2
+.b:	TST.L	D1
+	BNE.S	.c
+	LEA	smp_Zero41,A1
+.c:	TST.L	D2
+	BNE.S	.r
+	LEA	smp_Zero41,A2
+.r:	RTS
+
+; no memory for the sample block: file buffer back, name and header
+; as before, slot empty. a4 = slot entry, returns a0 = text
+pt_LoadNoMem41:
+	CLR.L	124(A4)
+pt_LoadNoMemTail41:
+	JSR	pt_09A4			; file buffer
+	CLR.L	dat_PatTablePtr
+	BSR.W	pt_LoadNamePtr41
+	LEA	smp_OldName,A1
+	MOVEQ	#21,D0
+.n:	MOVE.B	(A1)+,(A0)+
+	DBF	D0,.n			; a0 = s_length
+	CLR.W	(A0)+
+	ADDQ.L	#2,A0
+	CLR.W	(A0)+
+	MOVE.W	#1,(A0)
+	LEA	dat_1339,A0
+	RTS
+
+; no memory for the envelope: sample is dropped too. a4 = env entry
+pt_LoadNoEnv41:
+	CLR.L	4(A4)
+	JSR	pt_GetSamplePtrEntry
+	BRA.S	pt_LoadNoMemTail41
 
 ; sample monitor abort check, every 184 smps from pt_1200 loop
 ; ints are off in the monitor, no key reaches the buffer -> esc read from

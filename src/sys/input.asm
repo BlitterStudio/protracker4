@@ -15,7 +15,7 @@ dat_InputIntStruct:
 	DC.W	$0234
 	DC.L	str_InputHandler
 	DS.L	1
-	DC.L	dat_InputHandlerCode
+	DC.L	pt_InAbs41
 str_InputHandler:
 	DC.B	"Protracker InputHandler",0,0,0
 dat_InputHandlerCode:
@@ -102,7 +102,7 @@ pt_r01a70:
 	MOVE.L	(A1),(A2)
 	RTS
 pt_r01a74:
-	CMP.B	dat_RawKeyCode,D0
+	JSR	pt_InKey41
 	BNE.S	pt_r01a88
 	TST.B	dat_KeyUpDown
 	BNE.S	pt_r01a86
@@ -466,7 +466,7 @@ pt_r01f56:
 	MOVEQ	#0,D4
 pt_r01f6e:
 	MOVEQ	#0,D7
-	MOVE.W	DMACONR,D6
+	JSR	pt_ScopeDma41
 	CLR.W	dat_CopperSyncVar
 	BTST	#0,dat_ChannelIntCode
 	BEQ.S	pt_r01fae
@@ -952,6 +952,7 @@ pt_011A:
 	CMP.B	dat_0658,D0
 	BEQ.S	pt_WaitAllocBufOrRet
 	MOVE.B	dat_ScopeMode,dat_0658
+pt_ScopeBackdrop41:
 	CMPI.L	#$494d5021,(A0)
 	BNE.S	pt_011B
 	MOVEM.L	D0-D7/A1-A6,-(A7)

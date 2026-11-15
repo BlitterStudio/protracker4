@@ -163,11 +163,7 @@ pt_122E:
 	BCLR	#1,dat_FontMode
 pt_122F:
 	MOVE.W	D0,D1
-	MOVEA.L	dat_ModulePtr,A0
-	LEA	(-10,A0),A0
-	MOVE.W	D1,D0
-	MULU	#s_SIZEOF,D0
-	ADDA.L	D0,A0
+	JSR	pt_SmxHdr		;1d7ca: ;41 samples 32-63
 	MOVE.L	A0,dat_TextStringPtr
 	MOVE.W	#$0016,dat_TextCharCount
 	TST.W	dat_SampleMixVar2
@@ -201,7 +197,7 @@ pt_1233:
 	BEQ.S	pt_1234
 	BSR.W	pt_124E
 pt_1234:
-	CMP.L	#$0000001e,D7
+	CMP.L	#SMX_MAX-1,D7		;1d852: ;41
 	BEQ.S	pt_1235
 	ADDQ.L	#1,D7
 	BRA.W	pt_122C
@@ -321,12 +317,11 @@ pt_EditModeSetup:
 	JSR	pt_SavePaletteState
 	JSR	pt_SetPaletteSong
 	MOVE.L	(A7)+,D0
-	MOVEA.L	dat_ModulePtr,A6
-	LEA	(-10,A6),A6
 	MOVE.L	D0,D7
 	ADD.W	dat_FileFlags,D7
-	MULU	#s_SIZEOF,D7
-	ADDA.L	D7,A6
+	MOVE.L	D0,-(A7)		;1d9ce: ;41 samples 32-63
+	JSR	pt_SmxHdrA6
+	MOVE.L	(A7)+,D0
 	MOVE.L	A6,dat_SongDataAddr
 	MOVE.L	A6,dat_TextStringPtr
 	ADDI.L	#$00000015,dat_SongDataAddr
@@ -418,14 +413,7 @@ pt_SetEditWriteFlag:
 dat_SampleMixIdx:
 	DS.W	1
 pt_BtnInfoSwitch:
-	CMPI.W	#$000f,dat_FileFlags
-	BNE.S	pt_1258
-	CLR.W	dat_FileFlags
-	BRA.S	pt_1259
-	DC.W	$5279
-	DC.L	dat_FileFlags
-pt_1258:
-	MOVE.W	#$000f,dat_FileFlags
+	JSR	pt_SmxPage		;1db54: ;41 four pages
 pt_1259:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	BSR.W	pt_SampleListRefresh
@@ -447,7 +435,7 @@ pt_BtnInfoUp:
 pt_125B:
 	RTS
 pt_BtnInfoDown:
-	CMPI.W	#$000f,dat_FileFlags
+	CMPI.W	#SMX_MAX-16,dat_FileFlags	;1dbbe: ;41
 	BEQ.S	pt_125D
 	BSR.W	pt_SampleEditDrawUpdate
 	ADDQ.W	#1,dat_FileFlags
@@ -479,7 +467,7 @@ dat_PalEdColorPos:
 dat_PalEdColorMax:
 	DS.W	1
 pt_PalEditorColors:
-	DC.W	$0022
+	DC.W	SMX_MAX+3		;1dc0a: ;41 list of 63 samples
 pt_BtnInfoScroll:
 	MOVE.W	#$ffff,dat_DiskOpFlag
 	MOVE.W	dat_PalEdSelectPos,D1

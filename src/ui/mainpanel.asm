@@ -67,7 +67,7 @@ pt_BtnMainPatternValue:
 	BSR.W	pt_UpdateSampleListUI
 	TST.W	dat_PaletteDirtyFlag
 	BNE.W	pt_MainEditLoop
-	CMP.B	(dat_SampleVolume,PC),D0
+	CMP.B	(dat_SampleEditState+3,PC),D0
 	BLS.S	pt_0885
 	MOVE.L	(dat_SampleEditState,PC),D0
 pt_0885:
@@ -180,9 +180,9 @@ pt_BtnMainPatternArrows:
 	ADDI.B	#$09,(A0)
 pt_0895:
 	MOVE.B	(A0),D0
-	CMP.B	(dat_SampleVolume,PC),D0
+	CMP.B	(dat_SampleEditState+3,PC),D0
 	BLS.W	pt_MainEditLoop
-	MOVE.B	(dat_SampleVolume,PC),(A0)
+	MOVE.B	(dat_SampleEditState+3,PC),(A0)
 	BRA.W	pt_MainEditLoop
 pt_0896:
 	ADDA.L	dat_BplUpdateReq,A0
@@ -239,10 +239,7 @@ pt_08A0:
 	TST.W	dat_ButtonActive
 	BMI.S	pt_08A3
 pt_08A1:
-	ADDQ.W	#1,dat_CurrentSample
-	CMPI.W	#$001f,dat_CurrentSample
-	BMI.S	pt_RefreshAfterEdit
-	MOVE.W	#$001f,dat_CurrentSample
+	JSR	pt_SmxUp		;0dc7e: ;41 samples to 63
 pt_RefreshAfterEdit:
 	JSR	pt_036E
 	BSR.W	pt_RefreshDisplay
@@ -250,10 +247,7 @@ pt_RefreshAfterEdit:
 pt_08A3:
 	TST.W	dat_CurrentSample
 	BEQ.S	pt_DrawSampleRefresh
-	SUBQ.W	#1,dat_CurrentSample
-	CMPI.W	#$0001,dat_CurrentSample
-	BGE.S	pt_RefreshAfterEdit
-	MOVE.W	#$0001,dat_CurrentSample
+	JSR	pt_SmxDown		;0dcaa: ;41 samples to 63
 	BRA.S	pt_RefreshAfterEdit
 pt_BtnMainFinetuneArrows:
 	MOVEA.L	dat_ModulePtr,A0
@@ -758,13 +752,13 @@ pt_08EC:
 	BTST	#5,dat_ModeFlags
 	BEQ.S	pt_08ED
 	LEA	dat_1432,A0
-	JSR	pt_HandleUIButton
+	JSR	pt_TrkHit4_41
 	TST.W	D2
 	BNE.S	pt_08EE
 	RTS
 pt_08ED:
 	LEA	dat_1433,A0
-	JSR	pt_HandleUIButton
+	JSR	pt_TrkHit41
 	TST.W	D2
 	BNE.S	pt_08EE
 	RTS
@@ -970,10 +964,11 @@ pt_AudioChannelUpdate:
 	BNE.S	pt_091C
 	LEA	dat_Channel1,A5
 	MOVEQ	#0,D0
-	MOVEQ	#3,D7
-	BTST	#5,dat_ModeFlags
-	BNE.S	pt_091B
-	MOVEQ	#7,D7
+	JSR	pt_TrkCnt41
+	NOP
+	NOP
+	NOP
+	NOP
 pt_091B:
 	BSR.S	pt_SaveRegsProcess
 	ADDQ.W	#1,D0
@@ -1031,8 +1026,7 @@ pt_0921:
 pt_0922:
 	MOVE.L	#$204f4e20,(A2)
 pt_0923:
-	ADD.B	#$31,D6
-	MOVE.B	D6,(A1)
+	JSR	pt_TrkHeadNum41
 	ADDQ.W	#1,D0
 	ADDQ.W	#1,D1
 	MOVEQ	#3,D2

@@ -71,7 +71,7 @@ pt_0FE5:
 	MOVE.L	(dat_FileHandle,PC),D1
 	MOVE.L	(dat_FileWriteAddr,PC),D2
 	MOVE.L	(dat_FileWriteSize,PC),D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	(dat_FileHandle,PC),D1
 	JSR	(-36,A6)
 	CLR.L	dat_FileHandle
@@ -792,7 +792,7 @@ pt_1043:
 	MOVE.L	#dat_SamplePathFmt,D1
 	MOVEQ	#-2,D2
 	JSR	(-84,A6)
-	MOVE.L	D0,dat_PatternIndexBuf
+	JSR	pt_PathLock41
 	BEQ.W	pt_1050
 	JSR	pt_SetPaletteDim
 	LEA	(dat_12B5,PC),A0
@@ -1311,7 +1311,7 @@ pt_108C:
 	MOVE.L	D0,D1
 	MOVE.L	#dat_12FD,D2
 	MOVEQ	#56,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	LEA	(dat_12D5,PC),A0
 	BSR.W	pt_ShowStatusMsg
 	CLR.W	dat_EditModeVar
@@ -1354,7 +1354,7 @@ pt_1090:
 	MOVE.L	(dat_FileHandle,PC),D1
 	MOVE.L	#dat_12FE,D2
 	MOVEQ	#53,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	RMB
 	BEQ.S	pt_1091
 	ADDQ.W	#1,dat_EditModeVar
@@ -1427,7 +1427,7 @@ pt_109B:
 	MOVE.L	(dat_EditBufPtr,PC),D2
 	MOVE.W	(dat_EditBufX,PC),D3
 	MULU	#s_SIZEOF,D3
-	JSR	(-48,A6)
+	JSR	pt_Write41
 	MOVE.L	D7,D1
 	JSR	(-36,A6)
 	BSR.W	pt_ClearStatusMsg

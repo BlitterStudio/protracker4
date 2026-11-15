@@ -907,6 +907,7 @@ dat_05FA:
 dat_FileOpResult:
 	DC.L	$ffffffff
 pt_05FC:
+	JSR	pt_ChgSync41
 	CMPI.L	#$43484721,dat_SongChangedMagic
 	BNE.S	pt_05FD
 	JSR	pt_SaveConfirmDialog
@@ -1038,7 +1039,7 @@ pt_060E:
 	JMP	pt_RecordModeHandler
 pt_InitNewModule:
 	BSR.W	pt_BtnMainStop
-	CLR.B	dat_KeyCode
+	JSR	pt_TrkNew41
 	MOVEA.L	dat_ModulePtr,A0
 	MOVEA.L	A0,A1
 	MOVEQ	#19,D0
@@ -1078,7 +1079,7 @@ pt_0611:
 	CLR.W	dat_PatternPosition
 	BSR.W	pt_PatViewSetRow
 	BSR.S	pt_0612
-	CLR.L	dat_SongChangedMagic
+	JSR	pt_ChgClear41
 	JMP	pt_PatViewDrawAll
 pt_0612:
 	MOVE.L	(dat_TimeAuxVal,PC),D0
@@ -1121,7 +1122,7 @@ pt_0615:
 	DBF	D0,pt_0615
 	RTS
 pt_0616:
-	CLR.B	dat_KeyCode
+	JSR	pt_MuteAllOn41
 	MOVE.W	#$0001,dat_ScopeCh1
 	MOVE.W	#$0001,dat_ScopeCh2
 	MOVE.W	#$0001,dat_ScopeCh3
@@ -1137,7 +1138,7 @@ pt_r0a286:
 	CLR.B	dat_KeyCode
 	TST.W	dat_KeyQual1
 	BEQ.S	pt_r0a2c4
-	CLR.W	dat_ScopeCh1
+	JSR	pt_MuteSolo41
 	CLR.W	dat_ScopeCh2
 	CLR.W	dat_ScopeCh3
 	CLR.W	dat_ScopeCh4
@@ -1225,5 +1226,5 @@ pt_061D:
 	ADDQ.W	#1,D7
 	CMP.W	#$0020,D7
 	BNE.S	pt_061B
-	MOVE.W	#$0001,dat_TimeDisplayInit
+	JSR	pt_SmxFree		;0a408: ;41 samples 32-63
 	JMP	pt_CheckFileLock

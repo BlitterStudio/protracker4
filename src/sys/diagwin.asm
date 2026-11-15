@@ -155,7 +155,13 @@ dw_Line:
 	BTST	#6,CIAA_PRA
 	SEQ	D0
 	AND.L	#1,D0
-	MOVE.L	D0,(A2)+		; lmb
+	TST.B	rtg_LmbEv
+	BEQ.S	.le
+	ADDQ.L	#2,D0
+.le:	TST.B	rtg_SysDrag
+	BEQ.S	.ls
+	ADDQ.L	#4,D0
+.ls:	MOVE.L	D0,(A2)+		; lmb: 1 cia, 2 events, 4 on our frame
 	MOVEA.L	dat_IntuiLibBase,A0
 	MOVEQ	#0,D0
 	MOVE.L	52(A0),D1		; ActiveWindow
