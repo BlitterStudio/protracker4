@@ -6,9 +6,7 @@ By Tom Beyer, Oliver Ickler, Haavard Pedersen and Akustikrausch (Andreas Wendorf
 [![video: space warz - opus 1 by rez of eclipse, 28 channels, protracker 4.1.2 in the rtg window on a full hd workbench](docs/screenshots/release/pt41_video_28ch.png)](https://youtu.be/IpsjcYhZxCw)
 
 *Video on YouTube: Space Warz - Opus 1 by Rez of Eclipse, 28 channels, in the
-RTG window on a Full HD Workbench. Recorded in WinUAE (AmiKit). The emulator
-has no AmiGUS, so the sound comes from [libpt4](#libpt4), the C port of the
-4.1 replayer.*
+RTG window on a Full HD Workbench.*
 
 ProTracker 4.1.2. Up to 32 channels, graphics cards, sound cards, and the
 editor you know.
