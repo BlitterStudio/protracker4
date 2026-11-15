@@ -260,11 +260,26 @@ API: `libpt4/include/pt4.h`, more in `libpt4/README.md`.
 ## screens
 
 ![space warz - opus 1 by rez of eclipse, 28 channels on the amigus, the window filling the full hd workbench of a real a1200](docs/screenshots/release/pt41_a1200_rtg_28ch_fullscreen.png)
+
+*Space Warz - Opus 1 by Rez of Eclipse, 28 channels on the AmiGUS, the window
+filling the Full HD Workbench.*
+
 ![protracker 4.1 in a window on the full hd workbench of a real a1200 with pistorm, playing high strung techno by kenny hammond](docs/screenshots/release/pt41_a1200_rtg_workbench.png)
+
+*ProTracker 4.1.2 in a window on the Workbench, High Strung Techno by Kenny
+Hammond.*
+
 ![a source of light by dustbin of nemesis, 8 tracks playing](docs/screenshots/release/pt41_a1200_8ch_play_1.png)
-![credits](docs/screenshots/release/pt41_a1200_8ch_credits.png)
+
+*A Source of Light by Dustbin of Nemesis, 8 tracks with scopes.*
+
 ![sampler](docs/screenshots/release/pt41_a1200_sampler.png)
+
+*Sampler.*
+
 ![setup](docs/screenshots/release/pt41_a1200_setup.png)
+
+*Setup.*
 
 ## reporting bugs
 
