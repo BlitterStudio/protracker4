@@ -30,6 +30,12 @@ GitHub. Keep your old ProTracker and work on copies of important songs.
 - Scopes, analyzer and VU meters, palette editor, 6 colour presets, online
   help, config slots.
 
+## fixed in 4.1.2.1
+
+- SPACE or EDIT with the sampler open switched edit mode on. Notes played on
+  the keyboard were then written into the pattern and drawn over the sampler.
+  Edit mode now stays off there. An error of Beta 2.
+
 ## new in 4.1.2
 
 New, most important first:
@@ -69,7 +75,7 @@ Fixed, most important first:
   fast RAM, which Paula cannot read.
 - XPK packed modules: every loop was stretched to the sample end and one-shot
   samples looped.
-- AmiGUS on fast CPUs (PiStorm): the card stayed silent after the samples
+- AmiGUS on fast accelerators: the card stayed silent after the samples
   were sent too fast.
 - AmiGUS with wide modules: STOP left voices playing; loops with a start
   above 0, loops and 9xx beyond 64 KB, notes outside C-1..B-3 and 8xx
@@ -122,9 +128,6 @@ is mixed in software, so this also works on a 68000.
 - Switching OUTPUT away from AMIGUS with such a module asks first and keeps
   tracks 1-8.
 - The card's own mixer settings (AmiGUS Mixer) are left as they are.
-- Tested on a real A1200 with PiStorm32 lite and an AmiGUS mini, with real
-  modules of 6 to 32 channels. Not every effect has been heard on the real
-  card.
 - Known limit: 24-32 voices can clip on the card, there is no volume
   reduction yet.
 
@@ -181,7 +184,7 @@ Known differences:
 
 ## requirements
 
-- 68000 to 68060, Kickstart 2.04 or newer (tested up to AmigaOS 3.2.3), 1 MB
+- 68000 to 68060, Kickstart 2.04 or newer (up to AmigaOS 3.2.3), 1 MB
   chip RAM. 4 channel modules play on every such Amiga.
 - 8 channels on Paula: a 68020 or a fast 68000 mixes tracks 5-8. A 7 MHz
   68000 needs real fast RAM for that (5 kHz, no scopes while playing);
@@ -205,13 +208,6 @@ Known differences:
 
 With an AmiGUS card nothing is mixed in software, on any CPU. Modules with
 9 to 32 channels need the card (a graphics card is optional).
-
-Tested in WinUAE: A500+ with 68000 and 1 MB chip on Kickstart 2.04,
-A500 with fast ram, A500 with fast 68000, A1200 on Kickstart 3.1, A1200 on
-AmigaOS 3.2.3 with AHI, A4000 with 68040 and 68060, A1200 with Picasso96,
-AmiKit 12.1 (AmigaOS 3.2.2) with a full hd card workbench and AHI 6.7.
-On real hardware: one A1200 with PiStorm32 lite (Emu68), AmiGUS mini and
-AmiKit on a full hd workbench.
 
 Known limits: RTG window dragging can still stall for up to about one
 second now and then; overwriting a large file on a nearly full disk fails
@@ -263,7 +259,7 @@ API: `libpt4/include/pt4.h`, more in `libpt4/README.md`.
 
 *28 channels on the AmiGUS, the window filling the Full HD Workbench.*
 
-![protracker 4.1 in a window on the full hd workbench of a real a1200 with pistorm](docs/screenshots/release/pt41_a1200_rtg_workbench.png)
+![protracker 4.1 in a window on a full hd workbench](docs/screenshots/release/pt41_a1200_rtg_workbench.png)
 
 *ProTracker 4.1.2 in a window on the Workbench.*
 

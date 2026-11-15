@@ -782,7 +782,7 @@ pt_BtnMainRecord:
 	JSR	pt_ShowStatusMsg
 	BRA.W	pt_0308
 pt_BtnMainEdit:
-	JSR	pt_BtnMainStop
+	JSR	pt_EditGate41
 	CLR.B	dat_KeyCode
 	BSR.W	pt_SetPaletteRec
 	JSR	pt_PatViewSetRow

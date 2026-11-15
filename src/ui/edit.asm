@@ -794,3 +794,13 @@ pt_NotePlay41:
 .s:	MOVE.W	D1,dat_PlaybackEnable
 	MOVE.L	(A7)+,D1
 	RTS
+
+; hook pt_BtnMainEdit: stop as before, sampler open: edit mode stays off
+pt_EditGate41:
+	JSR	pt_BtnMainStop
+	TST.W	dat_SamplerActive
+	BEQ.S	.r
+	ADDQ.L	#4,A7			; leave caller too
+	CLR.B	dat_KeyCode
+	JMP	pt_WaitMouseRelease
+.r:	RTS
