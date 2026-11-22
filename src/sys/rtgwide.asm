@@ -475,6 +475,7 @@ pt_RwdCheck:
 ; pattern lines, full width lines
 pt_RwdMaps:
 	MOVEM.L	D0-D6/A0-A5,-(A7)
+	SF	rwd_StDxOk		; stage map changes
 	BSR.W	pt_RwdStgFit
 	MOVE.W	rwd_W,D4
 	SUB.W	#16,D4			; scroll bar column
@@ -1713,20 +1714,16 @@ pt_RwdCol:
 	MOVEM.L	(A7)+,D0-D6/A0
 	RTS
 
-; stage row of this line into the line buffer (x 640 on)
+; stage row of this line into the line buffer (x 640 on); the row as the
+; lut buffer is made from it is kept in WM_SOLD
 pt_RwdStRow:
 	MOVEM.L	D0-D2/A0-A2,-(A7)
+	BSR.W	pt_RwdStCols
 	LEA	rwd_StCol,A1
-	LEA	rwd_StRgb(PC),A2
-	MOVEQ	#20-1,D2
-.c:	MOVE.W	(A2)+,D1
-	BSR.W	pt_RtgSprCol
-	MOVE.B	D1,(A1)+
-	DBF	D2,.c
-	LEA	-20(A1),A1
 	MOVE.W	rtg_NatRow,D0
 	SUB.W	#RWD_SCT,D0
 	MULU	#640,D0
+	MOVE.L	D0,D1
 	WMLEA	WM_STG,A2
 	ADDA.L	D0,A2
 	MOVEA.L	rtg_LineBuf,A0
@@ -1736,11 +1733,257 @@ pt_RwdStRow:
 .p:	MOVE.B	(A2)+,D0
 	MOVE.B	(A1,D0.W),(A0)+
 	DBF	D2,.p
+	WMLEA	WM_SOLD,A1
+	ADDA.L	D1,A1
+	LEA	-640(A2),A2
+	MOVE.W	#640/4-1,D2
+.o:	MOVE.L	(A2)+,(A1)+
+	DBF	D2,.o
 	MOVEM.L	(A7)+,D0-D2/A0-A2
+	RTS
+
+; stage colour codes -> line colours (rwd_StCol); the colours stay while
+; the colour pool is not reset
+pt_RwdStCols:
+	MOVEM.L	D0-D2/A0-A1,-(A7)
+	MOVE.W	rtg_PoolGen,D0
+	TST.B	rwd_StColOk
+	BEQ.S	.go
+	CMP.W	rwd_StColGen,D0
+	BEQ.S	.r
+.go:	MOVE.W	D0,rwd_StColGen		; (a reset in the loop: again next time)
+	ST	rwd_StColOk
+	LEA	rwd_StCol,A1
+	LEA	rwd_StRgb(PC),A0
+	MOVEQ	#20-1,D2
+.c:	MOVE.W	(A0)+,D1
+	BSR.W	pt_RtgSprCol
+	MOVE.B	D1,(A1)+
+	DBF	D2,.c
+.r:	MOVEM.L	(A7)+,D0-D2/A0-A1
 	RTS
 rwd_StRgb:	DC.W	$000,$005,$00b,$fe0,$8de,$359
 	DC.W	$002,$004,$113,$333,$eff,$8de	; track view: wells, leds
 	DC.W	$150,$370,$480,$6a0,$8b0,$9c0,$be0,$cf0	; pt's level colours
+
+; stage row of the window when only its stage changed since the row was
+; made (planes, bank, sprites as before): the changed 32 px chunks of the
+; stage go straight into the lut buffer, as the pixels pt_RwdStRow and the
+; scaler would make from them. z=1 done, z=0 the row has to be converted
+pt_RwdStFast:
+	MOVEM.L	D0-D7/A0-A6,-(A7)
+	TST.B	rtg_RunWin
+	BEQ.W	.no
+	TST.B	rtg_Wide
+	BEQ.W	.no
+	TST.B	rwd_On
+	BEQ.W	.no
+	TST.L	rwd_Mem
+	BEQ.W	.no
+	TST.L	rtg_LutBuf
+	BEQ.W	.no
+	TST.B	rtg_NoEmit
+	BNE.W	.no
+	MOVEQ	#0,D7
+	MOVE.W	rtg_NatRow,D7
+	SUB.W	#RWD_SCT,D7		; stage row
+	BMI.W	.no
+	CMP.W	#RWD_SCN,D7
+	BHS.W	.no
+	MOVE.W	D7,D0
+	MULU	#640,D0
+	WMLEA	WM_STG,A2
+	ADDA.L	D0,A2			; stage row now
+	WMLEA	WM_SOLD,A3
+	ADDA.L	D0,A3			; ... as the buffer was made from it
+	MOVEQ	#0,D3			; changed stage chunks
+	MOVE.B	(A2),D0
+	CMP.B	(A3),D0
+	BEQ.S	.p0
+	BSET	#31,D3			; pixel 0 is also what shows right of the stage
+.p0:	MOVEQ	#0,D1
+.cc:	MOVE.W	D1,D0
+	LSL.W	#5,D0
+	LEA	(A2,D0.W),A0
+	LEA	(A3,D0.W),A1
+	MOVEQ	#8-1,D2
+.cl:	CMPM.L	(A0)+,(A1)+
+	DBNE	D2,.cl
+	BEQ.S	.cn
+	BSET	D1,D3
+	LEA	(A2,D0.W),A0
+	LEA	(A3,D0.W),A1
+	MOVEQ	#8-1,D2
+.cp:	MOVE.L	(A0)+,(A1)+
+	DBF	D2,.cp
+.cn:	ADDQ.W	#1,D1
+	CMP.W	#20,D1
+	BLO.S	.cc
+	TST.L	D3
+	BEQ.W	.ok			; the stage is as it was made from
+	BSR.W	pt_RwdStCols
+	TST.B	rtg_PalDirty		; as pt_RtgWinRow: new colours first
+	BEQ.S	.np
+	BSR.W	pt_RtgCTab
+	ST	rtg_BlitAll
+.np:	TST.B	rwd_StDxOk
+	BNE.S	.rk
+	BSR.W	pt_RwdStDx
+.rk:	MOVEQ	#0,D0			; dst rows of the output line
+	MOVE.W	rtg_OutRow,D0
+	MULU	rtg_WinH,D0
+	DIVU	rtg_OutH,D0
+	AND.L	#$ffff,D0
+	MOVEQ	#0,D6
+	MOVE.W	rtg_OutRow,D6
+	ADDQ.W	#1,D6
+	MULU	rtg_WinH,D6
+	DIVU	rtg_OutH,D6
+	AND.L	#$ffff,D6
+	SUB.L	D0,D6
+	BEQ.W	.ok			; shrunk: no dst row
+	MOVE.L	D0,-(A7)		; first dst row
+	SUBQ.W	#1,D6			; more dst rows
+	MOVEQ	#0,D5
+	MOVE.W	rtg_WinW,D5
+	MULU	D5,D0
+	MOVEA.L	rtg_LutBuf,A6
+	ADDA.L	D0,A6			; first dst row in the buffer
+	WMLEA	WM_XA,A4		; window x -> line x
+	LEA	rwd_StCol,A5
+	LEA	-640(A2),A2		; stage by line x
+	LEA	rwd_StDx,A3
+	MOVEQ	#0,D7			; lut chunks to write
+	MOVEQ	#0,D2			; stage chunk
+.sk:	BTST	D2,D3
+	BEQ.S	.skn
+	MOVE.W	D2,D0
+	LSL.W	#6,D0
+	MOVE.W	64(A3,D0.W),D1		; its window x range
+	MOVE.W	(A3,D0.W),D0
+	BSR.W	.put
+.skn:	ADDQ.W	#1,D2
+	CMP.W	#20,D2
+	BLO.S	.sk
+	BTST	#31,D3
+	BEQ.S	.nt
+	MOVE.W	1280(A3),D0		; right of the stage: pixel 0
+	MOVE.W	rtg_WinW,D1
+	BSR.W	.put
+.nt:	MOVE.L	(A7)+,D4
+	TST.L	D7
+	BEQ.S	.ok
+	MOVEA.L	rtg_DirtyTab,A0		; as pt_RtgWinRow: dirty chunks, span
+	MOVE.L	D4,D0
+	LSL.L	#2,D0
+	ADDA.L	D0,A0
+	MOVE.W	D6,D2
+.mk:	OR.L	D7,(A0)+
+	DBF	D2,.mk
+	CMP.W	rtg_DirtyY0,D4
+	BGE.S	.y0
+	MOVE.W	D4,rtg_DirtyY0
+.y0:	MOVE.W	D4,D0
+	ADD.W	D6,D0
+	CMP.W	rtg_DirtyY1,D0
+	BLE.S	.ok
+	MOVE.W	D0,rtg_DirtyY1
+.ok:
+	IFD	DIAGWIN
+	ADDQ.L	#1,dw_NFast
+	ENDC
+	MOVEM.L	(A7)+,D0-D7/A0-A6
+	CMP.B	D0,D0			; z=1
+	RTS
+.no:	MOVEM.L	(A7)+,D0-D7/A0-A6
+	ANDI.B	#$fb,CCR		; z=0
+	RTS
+; window x d0..d1-1 from the stage: its lut chunks into d7, pixels into
+; the dst rows where they differ (a2 stage by line x, a4 map, a5 colours,
+; a6 first dst row, d5 row bytes, d6 more dst rows)
+.put:	CMP.W	D0,D1
+	BLS.S	.pe
+	MOVE.W	D2,-(A7)
+	MOVEQ	#0,D2
+	MOVE.W	D0,D2
+	DIVU	rtg_ChunkW,D2		; first lut chunk
+	MOVEQ	#0,D4
+	MOVE.W	D1,D4
+	SUBQ.W	#1,D4
+	DIVU	rtg_ChunkW,D4		; last one
+.pm:	BSET	D2,D7
+	ADDQ.W	#1,D2
+	CMP.W	D4,D2
+	BLS.S	.pm
+	MOVEA.L	A4,A0
+	MOVE.W	D0,D2
+	ADD.W	D2,D2
+	ADDA.W	D2,A0			; map at x
+	MOVEA.L	A6,A1
+	ADDA.W	D0,A1			; first dst row at x
+	SUB.W	D0,D1
+	SUBQ.W	#1,D1
+	MOVEQ	#0,D4
+.px:	MOVE.W	(A0)+,D0
+	MOVE.B	(A2,D0.W),D4
+	MOVE.B	(A5,D4.W),D4
+	CMP.B	(A1),D4
+	BEQ.S	.pn
+	MOVE.B	D4,(A1)
+	MOVE.W	D6,D2
+	BEQ.S	.pn
+	SUBQ.W	#1,D2
+	MOVE.L	D5,D0
+.xl:	MOVE.B	D4,(A1,D0.L)
+	ADD.L	D5,D0
+	DBF	D2,.xl
+.pn:	ADDQ.L	#1,A1
+	DBF	D1,.px
+	MOVE.W	(A7)+,D2
+.pe:	RTS
+
+; the first window x of every stage pixel in the stage map (rwd_StDx 0-639);
+; 640: where the stage ends, right of it the map shows pixel 0 again
+pt_RwdStDx:
+	MOVEM.L	D0-D4/A0-A1,-(A7)
+	WMLEA	WM_XA,A0
+	LEA	rwd_StDx,A1
+	MOVEQ	#0,D1			; window x
+	MOVEQ	#0,D3			; stage pixel to get its x next
+.f:	CMP.W	rtg_WinW,D1
+	BHS.S	.end			; no stage in this window
+	MOVE.W	(A0)+,D0
+	CMP.W	#640,D0
+	BHS.S	.st
+	ADDQ.W	#1,D1
+	BRA.S	.f
+.st:	MOVE.W	D0,D4			; last map value
+.g:	SUB.W	#640,D0			; stage pixel at this x
+.h:	CMP.W	D0,D3
+	BHI.S	.n
+	MOVE.W	D3,D2
+	ADD.W	D2,D2
+	MOVE.W	D1,(A1,D2.W)
+	ADDQ.W	#1,D3
+	BRA.S	.h
+.n:	ADDQ.W	#1,D1
+	CMP.W	rtg_WinW,D1
+	BHS.S	.end
+	MOVE.W	(A0)+,D0
+	CMP.W	D4,D0
+	BLO.S	.end			; falls back: right of the stage
+	MOVE.W	D0,D4
+	BRA.S	.g
+.end:	CMP.W	#640,D3			; the rest: where the stage ends
+	BHI.S	.done
+	MOVE.W	D3,D2
+	ADD.W	D2,D2
+	MOVE.W	D1,(A1,D2.W)
+	ADDQ.W	#1,D3
+	BRA.S	.end
+.done:	ST	rwd_StDxOk
+	MOVEM.L	(A7)+,D0-D4/A0-A1
+	RTS
 
 ; row signature: analyzer changes of a stage row (d6)
 pt_RwdSig:

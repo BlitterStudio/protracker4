@@ -591,6 +591,12 @@ rwd_ScMute:	DS.B	1		; scope labels drawn dimmed, bit per track
 rwd_StCol:	DS.B	20		; stage colour codes -> line colours
 rwd_Main:	DS.B	1		; main panel in the top row: exit widened
 	EVEN
+rwd_StDx:	DS.W	642		; first window x of each stage pixel, 640: end of the stage
+rwd_StDxOk:	DS.B	1
+rwd_StColOk:	DS.B	1
+rwd_StColGen:	DS.W	1		; colour pool the stage colours are from
+rtg_PoolGen:	DS.W	1		; colour pool resets so far
+	EVEN
 prf_Loaded:	DS.B	1
 snd_Started:	DS.B	1
 prf_Buf:	DS.L	16		; PREFS_MAX: newer files read in part

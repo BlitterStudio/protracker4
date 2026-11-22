@@ -242,16 +242,36 @@ pt_RtgProc:
 	ADD.L	D0,dw_TFr
 	MOVE.L	dw_VblTot,-(A7)
 	ENDC
+	IFD	DIAGWIN
+	MOVE.L	dw_VblTot,-(A7)
+	ENDC
 	TST.B	rtg_RunWin
 	BEQ.S	.nwb
 	BSR.W	pt_RtgWinBlit
 .nwb:
+	IFD	DIAGWIN
+	MOVE.L	dw_VblTot,D0
+	SUB.L	(A7)+,D0
+	ADD.L	D0,dw_TWb
+	MOVE.L	dw_VblTot,-(A7)
+	ENDC
 	IFD	DEBUGAUTO
 	BSR.W	pt_RtgTick
 	MOVE.L	D0,-(A7)
 	ENDC
 	BSR.W	pt_RprBlit		; pattern area: card bitmap -> picture
+	IFD	DIAGWIN
+	MOVE.L	dw_VblTot,D0
+	SUB.L	(A7)+,D0
+	ADD.L	D0,dw_TRb
+	MOVE.L	dw_VblTot,-(A7)
+	ENDC
 	BSR.W	pt_RprVu		; vu bars over it
+	IFD	DIAGWIN
+	MOVE.L	dw_VblTot,D0
+	SUB.L	(A7)+,D0
+	ADD.L	D0,dw_TVu
+	ENDC
 	IFD	DEBUGAUTO
 	BSR.W	pt_RtgTick
 	SUB.L	(A7)+,D0
@@ -726,13 +746,15 @@ pt_RtgTeardown:
 
 ; force full redraw
 pt_RtgInvalidate:
-	MOVEM.L	D0/A0,-(A7)
+	MOVEM.L	D0/A0-A1,-(A7)
 	SF	rtg_StateOk
 	X20LEA	X20_RTGSIG,A0
+	X20LEA	X20_RTGBSIG,A1
 	MOVE.W	#RTG_MAXOUT-1,D0
 .i:	MOVE.L	#-1,(A0)+
+	MOVE.L	#-1,(A1)+
 	DBF	D0,.i
-	MOVEM.L	(A7)+,D0/A0
+	MOVEM.L	(A7)+,D0/A0-A1
 	RTS
 
 ;--- frame
@@ -1193,12 +1215,22 @@ pt_RtgRow:
 	BEQ.S	.sum
 	SUBQ.B	#1,(A1,D7.W)
 .sum:	ADD.L	D5,D6
-	BSR.W	pt_RtgSprSig
+	BSR.W	pt_RtgSprSigB		; sig without the analyzer stage
+	X20LEA	X20_RTGBSIG,A0
+	MOVE.L	(A0,D4.W),D0
+	MOVE.L	D6,(A0,D4.W)
+	CMP.L	D0,D6
+	SEQ	D2			; planes, bank, sprites as when the row was written
+	BSR.W	pt_RwdSig
 	X20LEA	X20_RTGSIG,A0
 	CMP.L	(A0,D4.W),D6
 	BEQ.W	pt_RtgAdv
 	MOVE.L	D6,(A0,D4.W)
-	; convert to rtg_LineBuf
+	TST.B	D2
+	BEQ.S	.cv
+	BSR.W	pt_RwdStFast		; only the stage changed: its changed chunks only
+	BEQ.W	pt_RtgAdv
+.cv:	; convert to rtg_LineBuf
 	MOVEA.L	rtg_LineBuf,A1
 	MOVE.L	D1,D5
 	LSL.L	#3,D5			; bank * 8
@@ -1371,6 +1403,7 @@ pt_RtgPoolReset:
 	ST	rtg_ColDirty
 	CLR.W	rtg_NumBanks
 	MOVE.W	#255,rtg_SprNext
+	ADDQ.W	#1,rtg_PoolGen
 	X20LEA	X20_RTGCOLMAP,A0
 	MOVE.W	#4096/4-1,D0
 .c:	CLR.L	(A0)+
@@ -1532,6 +1565,9 @@ pt_RtgVuSegs:
 
 ; spr part of row sig: row d7, sig d6
 pt_RtgSprSig:
+	BSR.S	pt_RtgSprSigB
+	BRA.W	pt_RwdSig
+pt_RtgSprSigB:
 	MOVEM.L	D0-D3/A0-A1,-(A7)
 	TST.B	rtg_NoSpr
 	BNE.S	.x
@@ -1568,7 +1604,7 @@ pt_RtgSprSig:
 	ADD.W	6(A1,D0.W),D6		; color 3
 .n:	LEA	12(A0),A0
 .e:	DBF	D3,.l
-.x:	BSR.W	pt_RwdSig
+.x:
 	MOVEM.L	(A7)+,D0-D3/A0-A1
 	RTS
 
@@ -2756,6 +2792,9 @@ pt_RtgWinRow:
 	ADDQ.L	#1,rtg_Lines
 	BRA.W	.r
 .lut:	SUBQ.W	#1,D6			; lut buffer: scale into ram, write what changed
+	IFD	DIAGWIN
+	ADDQ.L	#1,dw_NSlow
+	ENDC
 	MOVEQ	#0,D5
 	MOVE.W	rtg_WinW,D5		; bytes per row
 	MOVE.L	D4,D0
@@ -2971,6 +3010,12 @@ pt_RtgWinBlit:
 	MOVEQ	#0,D7			; CTABFMT_XRGB8
 	MOVEA.L	rtg_CgxBase,A6
 	JSR	(-198,A6)		; WriteLUTPixelArray
+	IFD	DIAGWIN
+	ADDQ.L	#1,dw_NRect
+	MOVE.L	D5,D0
+	MULU	D6,D0
+	ADD.L	D0,dw_NPix
+	ENDC
 	ADDQ.L	#8,A4
 	SUBQ.W	#1,4(A7)
 	BNE.S	.pr
@@ -3152,6 +3197,7 @@ pt_RtgPriDown:
 pt_RtgBufAlloc:
 	MOVEM.L	D0-D3/A0-A1/A6,-(A7)
 	BSR.W	pt_RtgBufFree
+	SF	rwd_StDxOk
 	MOVEA.L	rtg_CgxBase,A0
 	CMPI.W	#41,20(A0)		; lib_Version: WriteLUTPixelArray
 	BLO.W	.r

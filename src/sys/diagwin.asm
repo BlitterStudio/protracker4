@@ -231,6 +231,41 @@ dw_Line:
 	CLR.L	(A2)+
 	DBF	D6,.te
 .tx:	JSR	(-138,A6)		; Permit
+	MOVE.L	dw_NFast,D0		; stage rows written by chunk / rows converted
+	MOVE.L	D0,D1
+	SUB.L	dw_LNF,D0
+	MOVE.L	D1,dw_LNF
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_NSlow,D0
+	MOVE.L	D0,D1
+	SUB.L	dw_LNS,D0
+	MOVE.L	D1,dw_LNS
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_TWb,D0		; vbls in window blit / renderer blit / vu bars
+	MOVE.L	D0,D1
+	SUB.L	dw_LWb,D0
+	MOVE.L	D1,dw_LWb
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_TRb,D0
+	MOVE.L	D0,D1
+	SUB.L	dw_LRb,D0
+	MOVE.L	D1,dw_LRb
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_TVu,D0
+	MOVE.L	D0,D1
+	SUB.L	dw_LVu,D0
+	MOVE.L	D1,dw_LVu
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_NRect,D0		; window blit: rects and pixels written
+	MOVE.L	D0,D1
+	SUB.L	dw_LRc,D0
+	MOVE.L	D1,dw_LRc
+	MOVE.L	D0,(A2)+
+	MOVE.L	dw_NPix,D0
+	MOVE.L	D0,D1
+	SUB.L	dw_LPx,D0
+	MOVE.L	D1,dw_LPx
+	MOVE.L	D0,(A2)+
 	LEA	dw_Fmt(PC),A0
 	LEA	dw_Args,A1
 	LEA	dw_PutC(PC),A2
@@ -292,8 +327,8 @@ dw_File:	DC.B	"diagwin.log",0
 dw_Dash:	DC.B	"-",0
 dw_PName:	DC.B	"PT4.1 diag",0
 dw_IName:	DC.B	"PT4.1 diag vbl",0
-dw_Head:	DC.B	"sec vbl idle disp forb main mirr tbuild twrite held blk lmb active mx my winpos layowner q liowner q instate insig | top tasks (vbl samples)",10,0
-dw_Fmt:		DC.B	"%ld v%ld i%ld d%ld f%ld m%ld r%ld rd%ld tf%ld tb%ld h%ld b%ld l%ld a%ld x%ld y%ld p%08lx lay=%s q%ld li=%s q%ld in=%ld/%08lx | %s %ld, %s %ld, %s %ld, %s %ld, %s %ld",10,0
+dw_Head:	DC.B	"sec vbl idle disp forb main mirr tbuild twrite held blk lmb active mx my winpos layowner q liowner q instate insig | top tasks (vbl samples) | fast slow wb rb vu rects px",10,0
+dw_Fmt:		DC.B	"%ld v%ld i%ld d%ld f%ld m%ld r%ld rd%ld tf%ld tb%ld h%ld b%ld l%ld a%ld x%ld y%ld p%08lx lay=%s q%ld li=%s q%ld in=%ld/%08lx | %s %ld, %s %ld, %s %ld, %s %ld, %s %ld | fast%ld slow%ld wb%ld rb%ld vu%ld rects%ld px%ld",10,0
 	EVEN
 dw_Tags:	DC.L	$800003eb,dw_ProcEntry	; NP_Entry
 		DC.L	$800003f2,0		; NP_CurrentDir
@@ -314,6 +349,20 @@ dw_VblTot:	DC.L	0
 dw_TFr:		DC.L	0
 dw_TBl:		DC.L	0
 dw_Forb:	DC.L	0
+dw_NFast:	DC.L	0
+dw_NSlow:	DC.L	0
+dw_LNF:		DC.L	0
+dw_LNS:		DC.L	0
+dw_TWb:		DC.L	0
+dw_TRb:		DC.L	0
+dw_TVu:		DC.L	0
+dw_LWb:		DC.L	0
+dw_LRb:		DC.L	0
+dw_LVu:		DC.L	0
+dw_NRect:	DC.L	0
+dw_NPix:	DC.L	0
+dw_LRc:		DC.L	0
+dw_LPx:		DC.L	0
 dw_Main:	DC.L	0
 dw_LMain:	DC.L	0
 dw_LFr:		DC.L	0
@@ -322,7 +371,7 @@ dw_LIdle:	DC.L	0
 dw_LDisp:	DC.L	0
 dw_Hist:	DS.L	32
 dw_HCopy:	DS.L	32
-dw_Args:	DS.L	34
+dw_Args:	DS.L	44
 dw_Buf:		DS.B	512
 dw_Started:	DC.B	0
 dw_State:	DC.B	0

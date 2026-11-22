@@ -4,6 +4,7 @@ X20_VOLTAB	RS.B	65*256		; voltab[vol][smp] = (smp*vol)>>7
 X20_RTGP2C	RS.B	2048		; rtg: p2c 256x8
 X20_RTGSIG	RS.L	768		; rtg: line sigs (output lines)
 X20_RTGPSIG	RS.L	768		; rtg: plane data sum per line
+X20_RTGBSIG	RS.L	768		; rtg: line sigs without the analyzer stage (output lines)
 X20_RTGKEY	RS.L	768		; rtg: bank, planes, ptrs per line
 X20_RTGHEAT	RS.B	768		; rtg: frames a line stays read
 X20_RTGBANKS	RS.W	8*30		; rtg: color banks
@@ -66,7 +67,8 @@ WM_XA		EQU	WM_STG+640*125	; window x -> line x: stage rows
 WM_SPRV		EQU	WM_XA+2*4096	; scope height per column (all boxes)
 WM_SGEN		EQU	WM_SPRV+640	; stage row changes
 WM_SLAST	EQU	WM_SGEN+128	; ... as last seen by the mirror
-WM_SIZE		EQU	WM_SLAST+128
+WM_SOLD		EQU	WM_SLAST+128	; stage rows as the lut buffer was made from them
+WM_SIZE		EQU	WM_SOLD+640*125
 
 WMLEA	MACRO
 	MOVEA.L	rwd_Mem,\2
