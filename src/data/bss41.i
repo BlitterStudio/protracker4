@@ -578,6 +578,7 @@ rtg_Wide:	DS.B	1		; 8 tracks over the full window width
 rtg_WideWant:	DS.B	1		; window snapped to the wide layout
 rtg_WideFail:	DS.B	1		; no wide layout this session
 rtg_WideMsg:	DS.B	1		; failure text shown
+trk_NarrowMsg:	DS.B	1		; wide module stays narrow: why, shown
 rtg_InStage:	DS.B	1		; pointer over the stage: no buttons
 rwd_BarOk:	DS.B	1
 rwd_On:		DS.B	1		; last frame: wide pattern view by the renderer

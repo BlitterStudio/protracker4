@@ -289,7 +289,7 @@ pt_TrkSnap:
 	MOVEM.L	D0-D1/D5/A0,-(A7)
 	MOVEA.L	rtg_CgxBase,A0
 	CMPI.W	#41,20(A0)		; renderer: lut writes
-	BLO.S	.x
+	BLO.S	.cg
 	MOVEQ	#0,D5
 	MOVE.W	D6,D5
 	ADDQ.W	#4,D5			; nearest byte
@@ -307,12 +307,19 @@ pt_TrkSnap:
 	SUBQ.W	#8,D5
 	CMP.W	#RWD_W,D5
 	BHS.S	.f
-	BRA.S	.x			; screen too narrow even for 1280
+	BRA.S	.nw			; screen too narrow even for 1280
 .ok:	MOVE.L	D5,D2
 	MOVEM.L	(A7)+,D0-D1/D5/A0
 	MOVEQ	#1,D0
 	ST	rtg_WideWant
 	RTS
+.cg:	LEA	rwd_MsgCgx(PC),A0	; the window stays as it is: say why, once
+	BRA.S	.ms			; per wide module
+.nw:	LEA	rwd_MsgNarrow(PC),A0
+.ms:	TST.B	trk_NarrowMsg
+	BNE.S	.x
+	ST	trk_NarrowMsg
+	JSR	pt_StatusLater41
 .x:	MOVEM.L	(A7)+,D0-D1/D5/A0
 .r:	RTS
 
@@ -329,6 +336,7 @@ pt_TrkGrow:
 	CMP.W	trk_GrownCh,D0
 	BEQ.S	.k
 	MOVE.W	D0,trk_GrownCh
+	SF	trk_NarrowMsg		; a new wide module may say why it stays narrow
 	MOVE.W	12(A1),D6		; Screen->Width
 	SUB.W	D4,D6
 .k:	MOVE.L	(A7)+,D0
