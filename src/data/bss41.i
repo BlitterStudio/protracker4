@@ -342,6 +342,12 @@ rtg_WinW:	DS.W	1
 rtg_WinH:	DS.W	1
 rtg_DirtyY0:	DS.W	1		; dst rows to blit, y0 > y1 = none
 rtg_DirtyY1:	DS.W	1
+rtg_DirtyTab:	DS.L	1		; per dst line: dirty chunk mask (long), behind the pixels of the lut buffer
+rtg_ChunkW:	DS.W	1		; chunk = this many px (x4), 32 chunks at most per line
+rtg_NChunk:	DS.W	1
+rtg_LastChunkW:	DS.W	1		; width of the last chunk
+rtg_PlanU:	DS.L	4		; tile masks of a band (RTG_BAND / RTG_TILE)
+rtg_PlanR:	DS.W	4*64		; rects of a band (x, y, w, h), RTG_RECTS of them
 rtg_BlitAll:	DS.B	1		; next blit: whole window
 	EVEN
 rtg_Synth:	DS.B	22		; synthetic RAWMOUSE event

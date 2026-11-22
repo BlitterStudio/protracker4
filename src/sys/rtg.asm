@@ -8,6 +8,14 @@ RTG_PATEND	EQU	254		; bottom frame of the pattern section (2 lines)
 RTG_KMAX	EQU	50		; extra rows at most (whole pattern in view)
 RTG_GEOSTILL	EQU	6		; frames a new size must stand before it is taken
 RTG_BAND	EQU	32		; lines a layer lock may cover
+RTG_TILE	EQU	8		; lines of a dirty tile (a led segment is 4 rows)
+RTG_RECTS	EQU	64		; rects a band may need (RTG_BAND/RTG_TILE tiles, 16 runs each)
+	IFNE	RTG_TILE-8
+	FAIL	"pt_RtgPlan shifts by 3"
+	ENDC
+	IFNE	RTG_BAND/RTG_TILE-4
+	FAIL	"rtg_PlanU holds 4 tiles"
+	ENDC
 RTG_BANKS	EQU	30
 RTG_SEGS	EQU	32
 RTG_WINBUF	EQU	4096*2+4096*3	; x table (words) + rgb row, win width up to 4096
@@ -2746,45 +2754,92 @@ pt_RtgWinRow:
 	JSR	(-438,A6)		; UnlockLayerRom (a5 = layer)
 	BSR.W	pt_RtgPriDown
 	ADDQ.L	#1,rtg_Lines
-	BRA.S	.r
-.lut:	SUBQ.W	#1,D6			; lut buffer: scale into ram, one write per frame
-	CMP.W	rtg_DirtyY0,D4
-	BGE.S	.l0
-	MOVE.W	D4,rtg_DirtyY0
-.l0:	MOVE.W	D4,D0
-	ADD.W	D6,D0
-	CMP.W	rtg_DirtyY1,D0
-	BLE.S	.l1
-	MOVE.W	D0,rtg_DirtyY1
-.l1:	MOVEQ	#0,D5
+	BRA.W	.r
+.lut:	SUBQ.W	#1,D6			; lut buffer: scale into ram, write what changed
+	MOVEQ	#0,D5
 	MOVE.W	rtg_WinW,D5		; bytes per row
 	MOVE.L	D4,D0
 	MULU	D5,D0
-	MOVEA.L	rtg_LutBuf,A1
-	ADDA.L	D0,A1
-	MOVEA.L	A1,A3			; first dst row
+	MOVEA.L	rtg_LutBuf,A6
+	ADDA.L	D0,A6			; first dst row
 	MOVEA.L	rtg_LineBuf,A0
 	BSR.W	pt_RwdXMap
+	MOVEA.L	rtg_ScaleBuf,A1		; new row first, the buffer keeps the old one
+	MOVEA.L	A1,A4
 	MOVE.W	D5,D2
 	SUBQ.W	#1,D2
 	MOVEQ	#0,D3
 .lx:	MOVE.W	(A2)+,D3
 	MOVE.B	(A0,D3.L),(A1)+
 	DBF	D2,.lx
-	BRA.S	.lc
-.lr:	MOVEA.L	A3,A0			; more dst rows: copy the first
-	MOVE.W	D5,D2
+	MOVEA.L	A4,A0			; new row against the old one, chunk by chunk
+	MOVEA.L	A6,A1
+	MOVEQ	#0,D3			; chunks that differ
+	MOVEQ	#0,D1			; chunk
+.ck:	MOVE.W	rtg_ChunkW,D0		; bytes of this chunk
+	MOVE.W	rtg_NChunk,D2
+	SUBQ.W	#1,D2
+	CMP.W	D2,D1
+	BNE.S	.ck1
+	MOVE.W	rtg_LastChunkW,D0
+.ck1:	MOVEA.L	A0,A5			; chunk starts
+	MOVEA.L	A1,A2
+	MOVE.W	D0,D2
 	LSR.W	#2,D2
-	BRA.S	.ll
-.lm:	MOVE.L	(A0)+,(A1)+
-.ll:	DBF	D2,.lm
-	MOVE.W	D5,D2
+	BEQ.S	.ckb
+	SUBQ.W	#1,D2
+.ckl:	CMPM.L	(A0)+,(A1)+
+	DBNE	D2,.ckl
+	BNE.S	.ckd
+.ckb:	MOVE.W	D0,D2
 	AND.W	#3,D2
-	BRA.S	.lb
-.lbm:	MOVE.B	(A0)+,(A1)+
-.lb:	DBF	D2,.lbm
-.lc:	DBF	D6,.lr
+	BEQ.S	.ckn
+	SUBQ.W	#1,D2
+.ckc:	CMPM.B	(A0)+,(A1)+
+	DBNE	D2,.ckc
+	BEQ.S	.ckn
+.ckd:	BSET	D1,D3			; differs: into every dst row of this line
+	MOVEA.L	A2,A1
+	MOVE.W	D6,D2
+.cd1:	MOVEA.L	A5,A0
+	MOVE.W	D0,D7
+	LSR.W	#2,D7
+	BRA.S	.cd3
+.cd2:	MOVE.L	(A0)+,(A1)+
+.cd3:	DBF	D7,.cd2
+	MOVE.W	D0,D7
+	AND.W	#3,D7
+	BRA.S	.cd5
+.cd4:	MOVE.B	(A0)+,(A1)+
+.cd5:	DBF	D7,.cd4
+	SUBA.W	D0,A1			; next dst row, same chunk
+	ADDA.L	D5,A1
+	DBF	D2,.cd1
+	MOVEA.L	A5,A0			; behind the chunk in the new and the first old row
+	ADDA.W	D0,A0
+	MOVEA.L	A2,A1
+	ADDA.W	D0,A1
+.ckn:	ADDQ.W	#1,D1
+	CMP.W	rtg_NChunk,D1
+	BLO.W	.ck
 	ADDQ.L	#1,rtg_Lines
+	TST.L	D3
+	BEQ.S	.r			; same pixels as shown: nothing to write
+	MOVEA.L	rtg_DirtyTab,A0		; dirty chunks of these dst rows
+	MOVE.L	D4,D0
+	LSL.L	#2,D0
+	ADDA.L	D0,A0
+	MOVE.W	D6,D2
+.mk:	OR.L	D3,(A0)+
+	DBF	D2,.mk
+	CMP.W	rtg_DirtyY0,D4
+	BGE.S	.l0
+	MOVE.W	D4,rtg_DirtyY0
+.l0:	MOVE.W	D4,D0
+	ADD.W	D6,D0
+	CMP.W	rtg_DirtyY1,D0
+	BLE.S	.r
+	MOVE.W	D0,rtg_DirtyY1
 .r:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
 
@@ -2808,6 +2863,7 @@ pt_RtgWinBlit:
 	MOVEQ	#0,D1
 	MOVE.W	rtg_WinH,D6
 	SUBQ.W	#1,D6
+	BSR.W	.mka			; every line, every chunk
 	TST.B	rtg_RprOn		; renderer: its area is not in the lut
 	BEQ.S	.al			; buffer, all but it as dirty lines
 	TST.L	rpr_BM
@@ -2852,7 +2908,8 @@ pt_RtgWinBlit:
 	BLT.W	.done
 .one:	BSR.W	.put
 	BNE.W	.r
-.done:	MOVE.W	#$7fff,rtg_DirtyY0
+.done:	BSR.W	.clr
+	MOVE.W	#$7fff,rtg_DirtyY0
 	CLR.W	rtg_DirtyY1
 .r:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	RTS
@@ -2876,45 +2933,193 @@ pt_RtgWinBlit:
 .pb2:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	ANDI.B	#$fb,CCR		; z=0
 	RTS
-; one band d1..d6
+; one band d1..d6: its dirty rects only, under one layer lock
 .put1:	MOVEM.L	D0-D7/A0-A6,-(A7)
+	LEA	rtg_PlanR,A0
+	BSR.W	pt_RtgPlan		; d0 = rects (d1, d6 kept)
+	TST.W	D0
+	BEQ.W	.p1c			; clean band: no lock
+	MOVE.W	D0,-(A7)
+	MOVEM.W	D1/D6,-(A7)		; 0 first line, 2 last line, 4 rects left
 	MOVEA.L	rtg_Window,A3
 	MOVEA.L	124(A3),A5		; Window->WLayer
 	BSR.W	pt_RtgPriUp
 	MOVEA.L	dat_GfxLibBase,A6
-	MOVE.L	D1,-(A7)
 	JSR	(-654,A6)		; AttemptLockLayerRom
-	MOVE.L	(A7)+,D1
 	TST.L	D0
-	BEQ.S	.pb			; intuition busy: next frame
-	EXT.L	D1			; SrcY = y0
-	SUB.W	D1,D6
-	ADDQ.W	#1,D6
-	EXT.L	D6			; SizeY
-	MOVEA.L	rtg_LutBuf,A0
-	MOVEQ	#0,D0			; SrcX
+	BEQ.W	.pb			; intuition busy: next frame
+	LEA	rtg_PlanR,A4
+.pr:	MOVEQ	#0,D0
+	MOVE.W	(A4),D0			; SrcX
+	MOVEQ	#0,D1
+	MOVE.W	2(A4),D1		; SrcY
+	MOVEQ	#0,D5
+	MOVE.W	4(A4),D5		; SizeX
+	MOVEQ	#0,D6
+	MOVE.W	6(A4),D6		; SizeY
 	MOVEQ	#0,D2
 	MOVE.W	rtg_WinW,D2		; SrcMod
-	MOVEA.L	50(A3),A1		; Window->RPort
-	X20LEA	X20_RTGCTAB,A2		; $00rrggbb
 	MOVEQ	#0,D3
-	MOVE.B	54(A3),D3		; DestX = BorderLeft
+	MOVE.B	54(A3),D3
+	ADD.L	D0,D3			; DestX = BorderLeft + x
 	MOVEQ	#0,D4
 	MOVE.B	55(A3),D4
-	ADD.L	D1,D4			; DestY = BorderTop + y0
-	MOVE.L	D2,D5			; SizeX
+	ADD.L	D1,D4			; DestY = BorderTop + y
+	MOVEA.L	rtg_LutBuf,A0
+	MOVEA.L	50(A3),A1		; Window->RPort
+	X20LEA	X20_RTGCTAB,A2		; $00rrggbb
 	MOVEQ	#0,D7			; CTABFMT_XRGB8
 	MOVEA.L	rtg_CgxBase,A6
 	JSR	(-198,A6)		; WriteLUTPixelArray
+	ADDQ.L	#8,A4
+	SUBQ.W	#1,4(A7)
+	BNE.S	.pr
 	MOVEA.L	dat_GfxLibBase,A6
 	JSR	(-438,A6)		; UnlockLayerRom
 	BSR.W	pt_RtgPriDown
-	MOVEM.L	(A7)+,D0-D7/A0-A6
+	MOVEA.L	rtg_DirtyTab,A0		; band written: its lines are clean
+	MOVEQ	#0,D0
+	MOVE.W	(A7),D0
+	LSL.L	#2,D0
+	ADDA.L	D0,A0
+	MOVE.W	2(A7),D2
+	SUB.W	(A7),D2
+.pm:	CLR.L	(A0)+
+	DBF	D2,.pm
+	ADDQ.L	#6,A7
+.p1c:	MOVEM.L	(A7)+,D0-D7/A0-A6
 	CMP.B	D0,D0			; z=1
 	RTS
 .pb:	BSR.W	pt_RtgPriDown
+	ADDQ.L	#6,A7
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 	ANDI.B	#$fb,CCR		; z=0
+	RTS
+; whole window dirty: every chunk of every line
+.mka:	MOVEM.L	D0/D2/A0,-(A7)
+	MOVEA.L	rtg_DirtyTab,A0
+	MOVE.W	rtg_WinH,D2
+	SUBQ.W	#1,D2
+	MOVEQ	#-1,D0
+.mkl:	MOVE.L	D0,(A0)+
+	DBF	D2,.mkl
+	CLR.W	rtg_DirtyY0
+	MOVE.W	rtg_WinH,rtg_DirtyY1
+	SUBQ.W	#1,rtg_DirtyY1
+	MOVEM.L	(A7)+,D0/D2/A0
+	RTS
+; no dirty chunks left in the lines of the span (what the window shows
+; of the renderer area is not from the buffer)
+.clr:	MOVEM.L	D0/D2/A0,-(A7)
+	MOVE.W	rtg_DirtyY1,D2
+	SUB.W	rtg_DirtyY0,D2
+	BLT.S	.clx
+	MOVEQ	#0,D0
+	MOVE.W	rtg_DirtyY0,D0
+	LSL.L	#2,D0
+	MOVEA.L	rtg_DirtyTab,A0
+	ADDA.L	D0,A0
+.clc:	CLR.L	(A0)+
+	DBF	D2,.clc
+.clx:	MOVEM.L	(A7)+,D0/D2/A0
+	RTS
+
+; band d1..d6 (RTG_BAND lines at most) -> rects (x, y, w, h words) at a0:
+; the dirty chunks of RTG_TILE lines each; a run of chunks that is dirty
+; in the next tiles as well makes one taller rect. d0 = rects (RTG_RECTS
+; at most)
+pt_RtgPlan:
+	MOVEM.L	D1-D7/A0-A3,-(A7)
+	MOVEA.L	A0,A3
+	MOVEA.L	rtg_DirtyTab,A1
+	MOVEQ	#0,D0
+	MOVE.W	D1,D0
+	LSL.L	#2,D0
+	ADDA.L	D0,A1			; mask of the first line
+	LEA	rtg_PlanU,A2
+	MOVE.W	D6,D2
+	SUB.W	D1,D2
+	ADDQ.W	#1,D2			; lines
+	MOVEQ	#0,D7			; tiles
+.tl:	MOVEQ	#0,D3
+	MOVEQ	#RTG_TILE-1,D4
+.tu:	OR.L	(A1)+,D3
+	SUBQ.W	#1,D2
+	BLE.S	.te
+	DBF	D4,.tu
+.te:	MOVE.L	D3,(A2)+
+	ADDQ.W	#1,D7
+	TST.W	D2
+	BGT.S	.tl
+	ADDQ.W	#1,D6			; end line + 1
+	MOVEQ	#0,D5			; tile
+	LEA	rtg_PlanU,A1
+.et:	MOVE.L	(A1),D3
+.run:	TST.L	D3
+	BEQ.W	.nt
+	MOVE.L	D3,D0			; lowest run of set chunks
+	NEG.L	D0
+	AND.L	D3,D0
+	ADD.L	D3,D0
+	NOT.L	D0
+	AND.L	D3,D0
+	MOVEQ	#0,D4
+.f0:	BTST	D4,D0
+	BNE.S	.f1
+	ADDQ.W	#1,D4
+	BRA.S	.f0
+.f1:	MOVE.W	D4,D2
+.f2:	ADDQ.W	#1,D2
+	CMP.W	#32,D2
+	BHS.S	.f3
+	BTST	D2,D0
+	BNE.S	.f2
+.f3:	MULU	rtg_ChunkW,D4		; x of the first chunk
+	MULU	rtg_ChunkW,D2		; end of the last one
+	CMP.W	rtg_WinW,D2
+	BLS.S	.f4
+	MOVE.W	rtg_WinW,D2
+.f4:	SUB.W	D4,D2
+	MOVE.W	D4,(A3)
+	MOVE.W	D2,4(A3)
+	MOVE.L	D0,D4			; run done in this tile
+	NOT.L	D4
+	AND.L	D4,D3
+	MOVE.W	D5,D2
+	ADDQ.W	#1,D2			; next tiles that have all of it
+	LEA	4(A1),A2
+.ex:	CMP.W	D7,D2
+	BHS.S	.ed
+	MOVE.L	(A2),D4
+	AND.L	D0,D4
+	CMP.L	D0,D4
+	BNE.S	.ed
+	MOVE.L	D0,D4
+	NOT.L	D4
+	AND.L	D4,(A2)+
+	ADDQ.W	#1,D2
+	BRA.S	.ex
+.ed:	MOVE.W	D5,D4			; y = first line + tile * RTG_TILE
+	LSL.W	#3,D4
+	ADD.W	D1,D4
+	LSL.W	#3,D2			; end = first line + tile * RTG_TILE, in the band
+	ADD.W	D1,D2
+	CMP.W	D6,D2
+	BLS.S	.e1
+	MOVE.W	D6,D2
+.e1:	SUB.W	D4,D2
+	MOVE.W	D4,2(A3)
+	MOVE.W	D2,6(A3)
+	ADDQ.L	#8,A3
+	BRA.W	.run
+.nt:	ADDQ.L	#4,A1
+	ADDQ.W	#1,D5
+	CMP.W	D7,D5
+	BLO.W	.et
+	MOVE.L	A3,D0
+	SUB.L	A0,D0
+	LSR.L	#3,D0
+	MOVEM.L	(A7)+,D1-D7/A0-A3
 	RTS
 
 ; layer lock held: just below input.device, which drags the window
@@ -2942,26 +3147,53 @@ pt_RtgPriDown:
 .r:	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
 	RTS
 
-; (re)alloc lut buffer rtg_WinW x rtg_WinH (cgx 41+), else direct rows
+; (re)alloc lut buffer rtg_WinW x rtg_WinH (cgx 41+), else direct rows;
+; behind the pixels a long per line: its dirty chunks
 pt_RtgBufAlloc:
-	MOVEM.L	D0-D1/A0-A1/A6,-(A7)
-	BSR.S	pt_RtgBufFree
+	MOVEM.L	D0-D3/A0-A1/A6,-(A7)
+	BSR.W	pt_RtgBufFree
 	MOVEA.L	rtg_CgxBase,A0
 	CMPI.W	#41,20(A0)		; lib_Version: WriteLUTPixelArray
-	BLO.S	.r
+	BLO.W	.r
 	MOVEQ	#0,D0
 	MOVE.W	rtg_WinW,D0
 	MULU	rtg_WinH,D0
+	ADDQ.L	#3,D0
+	AND.L	#$fffffffc,D0
+	MOVE.L	D0,D2			; offset of the dirty table
+	MOVEQ	#0,D1
+	MOVE.W	rtg_WinH,D1
+	LSL.L	#2,D1
+	ADD.L	D1,D0
 	MOVE.L	D0,rtg_LutSize
 	MOVE.L	#$10001,D1		; MEMF_PUBLIC|MEMF_CLEAR: rows the copper skips stay black
 	MOVEA.L	ABSEXECBASE.W,A6
 	JSR	(-198,A6)		; AllocMem
 	MOVE.L	D0,rtg_LutBuf
 	BEQ.S	.r
+	ADD.L	D2,D0
+	MOVE.L	D0,rtg_DirtyTab
+	MOVE.W	rtg_WinW,D0		; chunks: 32 at most, a multiple of 4 px wide
+	ADD.W	#31,D0
+	LSR.W	#5,D0
+	ADDQ.W	#3,D0
+	AND.W	#$fffc,D0
+	MOVE.W	D0,rtg_ChunkW
+	MOVEQ	#0,D1
+	MOVE.W	rtg_WinW,D1
+	ADD.W	D0,D1
+	SUBQ.W	#1,D1
+	DIVU	D0,D1
+	MOVE.W	D1,rtg_NChunk
+	SUBQ.W	#1,D1
+	MULU	D0,D1
+	MOVE.W	rtg_WinW,D3
+	SUB.W	D1,D3
+	MOVE.W	D3,rtg_LastChunkW
 	ST	rtg_BlitAll
 .r:	MOVE.W	#$7fff,rtg_DirtyY0
 	CLR.W	rtg_DirtyY1
-	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
+	MOVEM.L	(A7)+,D0-D3/A0-A1/A6
 	RTS
 
 pt_RtgBufFree:

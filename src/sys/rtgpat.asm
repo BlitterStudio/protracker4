@@ -230,7 +230,7 @@ pt_RprCapPre:
 
 ; after sprites: cursor bar lines as shown (text, edit cursor)
 pt_RprCapPost:
-	MOVEM.L	D0/A0-A1,-(A7)
+	MOVEM.L	D0-D1/A0-A1,-(A7)
 	MOVE.W	rtg_NatRow,D0
 	SUB.W	#RPR_BARTOP,D0
 	BMI.S	.r
@@ -252,10 +252,18 @@ pt_RprCapPost:
 	ADDA.L	D0,A1
 	MOVEA.L	rtg_LineBuf,A0
 	MOVE.W	#640/4-1,D0
-.l:	MOVE.L	(A0)+,(A1)+
+	CLR.W	-(A7)			; bar line changed?
+.l:	MOVE.L	(A0)+,D1
+	CMP.L	(A1),D1
+	BEQ.S	.s
+	MOVE.L	D1,(A1)
+	ST	(A7)
+.s:	ADDQ.L	#4,A1
 	DBF	D0,.l
-	ADDQ.W	#1,rpr_BarGen
-.r:	MOVEM.L	(A7)+,D0/A0-A1
+	TST.B	(A7)+
+	BEQ.S	.r
+	ADDQ.W	#1,rpr_BarGen		; bar line differs: show the pattern area again
+.r:	MOVEM.L	(A7)+,D0-D1/A0-A1
 	RTS
 
 ; native line d0 inside the pattern section while the renderer runs:
