@@ -195,7 +195,10 @@ Known differences:
 - Graphics card (RTG): 68020 and Picasso96 or CyberGraphX
   (cybergraphics.library 40). The card screen needs an 8 bit 640x480 or
   640x512 mode, the window a Workbench on the card. All tracks of a wide
-  module side by side need cybergraphics.library 41.
+  module side by side need cybergraphics.library 41 and a Workbench wider
+  than 1280 pixels plus the window borders. On a 1280 pixel wide Workbench
+  the window stays at 8 tracks and the status line says WIDE VIEW: WB TOO
+  NARROW.
 - Optional: xpkmaster.library, powerpacker.library, a MIDI interface on the
   serial port.
 
