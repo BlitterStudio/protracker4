@@ -16,10 +16,10 @@ GitHub. Keep your old ProTracker and work on copies of important songs.
 
 ## what it does
 
-- Pattern editor for 1 to 32 tracks (9 to 32 with the AmiGUS), 64 rows, up
-  to 100 patterns, song position list, PLST, edit options: quantize,
-  metronome, multi keyboard, record hold, sample / record / playnote / edit /
-  insert / split modes.
+- Pattern editor for 1 to 32 tracks (9 to 32 with the AmiGUS or ZZ9000AX),
+  64 rows, up to 100 patterns, song position list, PLST, edit options:
+  quantize, metronome, multi keyboard, record hold, sample / record /
+  playnote / edit / insert / split modes.
 - Edit op. pages with tools for tracks, patterns and samples, filter editor
   with modulation curve, chords, MIX IT (tracks rendered to a sample).
 - Sample editor: maximize, normalize, normal dc, boost, interpol, upsample,
@@ -42,11 +42,13 @@ New, most important first:
 
 - **AmiGUS sound card output**, every track on its own voice of the card
   (see below). Picked by itself at the first start.
-- **Modules with 1 to 32 channels.** 9 to 32 channels need the AmiGUS. With a
-  graphics card all tracks are shown side by side, without one 8 tracks are
-  in view and a slider scrolls through the rest. All tracks can be edited
-  (patterns, mute per channel, undo). SETUP -> CHAN sets the track count: 1
-  to 32 with the AmiGUS, else 1 to 8.
+- **ZZ9000AX voice engine output**, the same on the ZZ9000AX, with
+  `zz9k.library` revision 42 or later (see below).
+- **Modules with 1 to 32 channels.** 9 to 32 channels need the AmiGUS or
+  ZZ9000AX. With a graphics card all tracks are shown side by side, without
+  one 8 tracks are in view and a slider scrolls through the rest. All tracks
+  can be edited (patterns, mute per channel, undo). SETUP -> CHAN sets the
+  track count: 1 to 32 with the AmiGUS or ZZ9000AX, else 1 to 8.
 - **Up to 63 samples per module.** Samples 1-31 are stored as in any MOD,
   32-63 follow in a block at the end; players that ignore trailing data play
   1-31.
@@ -133,6 +135,34 @@ is mixed in software, so this also works on a 68000.
 
 ![setup page: output amigus, mix rate card 192 khz](docs/screenshots/release/pt41_a1200_amigus_setup.png)
 
+## ZZ9000AX voice engine
+
+With a ZZ9000AX and `zz9k.library` 2.42 or later, SETUP -> OUTPUT ->
+ZZ9000AX plays every track on its own voice of the card's voice engine (up
+to 32 voices, 48 kHz), the way the AmiGUS output does. Nothing is mixed in
+software, so this works on a 68000 too. The first start picks the card
+after the AmiGUS; with both cards the OUTPUT button gives each its turn.
+
+- Each sample is copied once to the card's sample bank (a 512 KB slot per
+  sample, sample 1-63 = id 0-62) and again only when it changed. Loops,
+  backwards play (81y) and 9xx are native on the card; DYN envelopes follow
+  the AmiGUS code.
+- The replayer stays on its CIA timer. Every tick becomes timestamped
+  records on the card's 48 kHz clock: the stamps follow the tempo, the card
+  clock keeps them in step (a tick that would run too far ahead waits), and
+  the sound is about 200 ms behind the screen (the card plays records with a
+  fixed lead of 160 ms or more).
+- 9 to 32 channel modules use the same tables as on the AmiGUS. The card's
+  master gain is lowered for more than 8 voices (to 1/2 at 32) so the sum
+  does not clip.
+- Periods are divided on the PAL Paula clock, as with the AmiGUS.
+- Tested on an A4000 with a 68060 and a ZZ9000 on Zorro III, AmigaOS 3.2,
+  in the RTG window on a 1280x720 Workbench: 4 and 8 channel modules play
+  correctly, and the first start picks the card.
+- Not tested: playing modules with more than 8 channels, Zorro II, a 68000,
+  both cards in one machine, and the AmiGUS output after the changes made
+  for this card.
+
 ## since 4.1
 
 - **8 channels.** 8CHN, OCTA, CD81 and FLT8 load, play and save. 68020 and up
@@ -191,7 +221,8 @@ Known differences:
   512 KB trapdoor slow RAM does not count. Otherwise tracks 1-4 play.
 - AHI sound cards: 68020 and ahi.device.
 - AmiGUS: the card and `amigus.library`, any CPU. 9-32 channel modules need
-  the AmiGUS; a graphics card is optional.
+  the AmiGUS or the ZZ9000AX; a graphics card is optional.
+- ZZ9000AX: the card and `zz9k.library` 2.42 or later, any CPU.
 - Graphics card (RTG): 68020 and Picasso96 or CyberGraphX
   (cybergraphics.library 40). The card screen needs an 8 bit 640x480 or
   640x512 mode, the window a Workbench on the card. All tracks of a wide
@@ -206,8 +237,8 @@ Known differences:
 | 68020 (A1200) | 8 channels at 22 kHz, AHI, RTG |
 | 68030 / 68040 / 68060 | 8 channels at 22-28 kHz (28 from about a 68030 at 50 MHz), AHI, RTG |
 
-With an AmiGUS card nothing is mixed in software, on any CPU. Modules with
-9 to 32 channels need the card (a graphics card is optional).
+With an AmiGUS or ZZ9000AX card nothing is mixed in software, on any CPU.
+Modules with 9 to 32 channels need a card (a graphics card is optional).
 
 Known limits: RTG window dragging can still stall for up to about one
 second now and then; overwriting a large file on a nearly full disk fails
