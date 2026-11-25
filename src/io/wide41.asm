@@ -91,8 +91,10 @@ pt_WideCheck:
 	BSR.W	pt_CardAny41		; amigus or zz9000ax
 	BEQ.S	.d
 	LEA	wide_AskSetup(PC),A0	; card there: output or rtg missing
+	BSR.W	pt_CardStr41
 .d:	JSR	pt_SetupEditScreen	; notice, one button
 	LEA	wide_MsgNotLoaded(PC),A0
+	BSR.W	pt_CardStr41
 	JSR	pt_StatusLater41	; disk op writes its status after
 	JMP	pt_FinishPaletteEdit
 .r:	MOVEM.L	(A7)+,D0-D1
@@ -1120,19 +1122,35 @@ pt_WideTmpFree:
 .r:	MOVEM.L	(A7)+,D0-D1/A0-A1/A6
 	RTS
 
-wide_MsgNotLoaded:	DC.B	"NOT LOADED (AMIGUS)",0
-wide_AskNoCard:	DC.B	10,10
+wide_NotLoadedA:	DC.B	"NOT LOADED (AMIGUS)",0
+wide_NotLoadedZ:	DC.B	"NOT LOADED (ZZ9000AX)",0
+wide_NotLoadedB:	DC.B	"NOT LOADED (AMIGUS/ZZ9000AX)",0
+wide_AskNoCard:	DC.B	10,10		; no card at all: both names
 	DC.B	" More than 8 tracks need",10
-	DC.B	"   the AmiGUS card.",10
+	DC.B	" AmiGUS or ZZ9000AX card",10
 	DC.B	"     Not loaded.",0
-wide_AskSetup:	DC.B	10,10
+wide_AskSetupA:	DC.B	10,10
 	DC.B	" More than 8 tracks need",10
 	DC.B	" OUTPUT AMIGUS (SETUP).",10
+	DC.B	"     Not loaded.",0
+wide_AskSetupZ:	DC.B	10,10
+	DC.B	" More than 8 tracks need",10
+	DC.B	" OUTPUT ZZ9000AX (SETUP).",10
+	DC.B	"     Not loaded.",0
+wide_AskSetupB:	DC.B	10,10
+	DC.B	" More than 8 tracks need",10
+	DC.B	" OUTPUT AMIGUS/ZZ9000AX.",10
 	DC.B	"     Not loaded.",0
 wide_MsgNoMem:	DC.B	"WIDE MODULE: NO MEMORY, TRACKS 1-4 ONLY",0
 wide_MsgTmpMem:	DC.B	"WIDE MODULE: NO MEMORY, NOT LOADED",0
 wide_MsgSaveMem:	DC.B	"NOT ENOUGH MEMORY TO SAVE ALL CHANNELS",0
-wide_MsgOn:	DC.B	"WIDE MODULE ON AMIGUS",0
+wide_MsgOnA:	DC.B	"WIDE MODULE ON AMIGUS",0
+wide_MsgOnZ:	DC.B	"WIDE MODULE ON ZZ9000AX",0
+wide_MsgOnB:	DC.B	"WIDE MODULE ON AMIGUS/ZZ9000AX",0
 wide_MsgGrpMem:	DC.B	"NO MEMORY FOR THE OTHER TRACKS",0
 wide_MsgViewMem:	DC.B	"NO MEMORY FOR THE 8 TRACK VIEW",0
 	EVEN
+; per card (pt_CardStr41): amigus, zz9000ax, both, none
+wide_MsgNotLoaded:	DC.L	wide_NotLoadedA,wide_NotLoadedZ,wide_NotLoadedB,wide_NotLoadedB
+wide_AskSetup:	DC.L	wide_AskSetupA,wide_AskSetupZ,wide_AskSetupB,wide_AskSetupB
+wide_MsgOn:	DC.L	wide_MsgOnA,wide_MsgOnZ,wide_MsgOnB,wide_MsgOnB

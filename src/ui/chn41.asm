@@ -37,6 +37,7 @@ pt_ChnStep41:
 	BSR.W	pt_CardAny41		; card there: how to get more
 	BEQ.S	.m
 	LEA	chn_MsgCard(PC),A0
+	BSR.W	pt_CardStr41
 	BRA.S	.m
 .card:	LEA	chn_MsgMin(PC),A0
 	TST.W	D4
@@ -509,6 +510,7 @@ pt_ChnToWide41:
 	TST.L	agus_Mem
 	BNE.S	.m
 	LEA	chn_MsgCard(PC),A0
+	BSR.W	pt_CardStr41
 .m:	BSR.W	pt_ChnMsg41
 	MOVEM.L	(A7)+,D1-D7/A0-A6
 	ANDI	#$fb,CCR		; z=0
@@ -592,9 +594,12 @@ chn_AskT:	DC.B	10,10
 	DC.B	" notes. Remove them?",0
 chn_MsgMax:	DC.B	"CHANNELS: 32 IS THE MAXIMUM",0
 chn_MsgMin:	DC.B	"CHANNELS: 1 IS THE MINIMUM",0
-chn_MsgCard:	DC.B	"9-32 CHANNELS: OUTPUT AMIGUS",0
-chn_MsgNoCard:	DC.B	"CHANNELS: 8 WITHOUT AMIGUS",0
+chn_MsgCardA:	DC.B	"9-32 CHANNELS: OUTPUT AMIGUS",0
+chn_MsgCardZ:	DC.B	"9-32 CHANNELS: OUTPUT ZZ9000AX",0
+chn_MsgCardB:	DC.B	"9-32 CHANNELS: OUTPUT AMIGUS/ZZ9000AX",0
+chn_MsgNoCard:	DC.B	"CHANNELS: 8 WITHOUT AMIGUS/ZZ9000AX",0	; no card at all
 chn_Msg4:	DC.B	"CHANNELS: CLICK THE NAME FOR 8CHN",0
 chn_MsgMem:	DC.B	"NO MEMORY FOR MORE CHANNELS",0
 chn_MsgMem8:	DC.B	"NO MEMORY FOR 8 CHANNELS",0
 	EVEN
+chn_MsgCard:	DC.L	chn_MsgCardA,chn_MsgCardZ,chn_MsgCardB,chn_MsgCardB	; pt_CardStr41

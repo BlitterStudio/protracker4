@@ -490,6 +490,9 @@ snd_TxtCard:	DC.B	"CARD 192 KHZ",0
 snd_MsgCard:	DC.B	"AMIGUS: NO MIXER, 192 KHZ",0
 snd_TxtZzax:	DC.B	"CARD 48 KHZ",0
 snd_MsgZzax:	DC.B	"ZZ9000AX: NO MIXER, 48 KHZ",0
-snd_MsgStereo:	DC.B	"STEREO: AHI/AMIGUS ONLY",0
+snd_MsgStereoA:	DC.B	"STEREO: AHI/AMIGUS ONLY",0
+snd_MsgStereoZ:	DC.B	"STEREO: AHI/ZZ9000AX ONLY",0
+snd_MsgStereoB:	DC.B	"STEREO: AHI/AMIGUS/ZZ9000AX ONLY",0
 ahi_MsgGone:	DC.B	"AHI MODE GONE: PREFS",0
 	EVEN
+snd_MsgStereo:	DC.L	snd_MsgStereoA,snd_MsgStereoZ,snd_MsgStereoB,snd_MsgStereoA	; pt_CardStr41

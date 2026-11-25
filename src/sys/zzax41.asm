@@ -172,6 +172,39 @@ pt_CardAny41:
 	TST.L	zzax_Card
 .r:	RTS
 
+; texts that name the card: d0 = 0 amigus, 1 zz9000ax, 2 both cards there,
+; 3 none. The output in use names itself, else the cards found (detect
+; first). Only d0 changes.
+pt_CardCase41:
+	TST.B	zzax_On
+	BNE.S	.zz
+	TST.B	agus_On
+	BNE.S	.ag
+	TST.L	zzax_Card
+	BNE.S	.zc
+	TST.L	agus_Card
+	BNE.S	.ag
+	MOVEQ	#3,D0
+	RTS
+.zc:	TST.L	agus_Card
+	BNE.S	.both
+.zz:	MOVEQ	#1,D0
+	RTS
+.ag:	MOVEQ	#0,D0
+	RTS
+.both:	MOVEQ	#2,D0
+	RTS
+
+; a0 = table of 4 string pointers (amigus, zz9000ax, both, none) -> a0 = the
+; one for the cards (pt_CardCase41); other registers kept
+pt_CardStr41:
+	MOVE.L	D0,-(A7)
+	BSR.S	pt_CardCase41
+	LSL.W	#2,D0
+	MOVEA.L	(0,A0,D0.W),A0
+	MOVE.L	(A7)+,D0
+	RTS
+
 ; both cards: they take turns on a click of OUTPUT. d0 = 3 amigus / 4
 ; zz9000ax, z=1 no card
 pt_SndCardNext41:

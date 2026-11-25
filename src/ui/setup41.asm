@@ -1292,6 +1292,7 @@ pt_SndStDown:
 
 pt_SndStNA:
 	LEA	snd_MsgStereo(PC),A0
+	BSR.W	pt_CardStr41
 	JMP	pt_ShowStatusMsg
 
 ; volume -> ahi, or paula (ring and direct channels) at once

@@ -269,6 +269,7 @@ pt_MixTaskPoll:
 	SF	wide_MsgPend
 	MOVEM.L	D0-D7/A0-A6,-(A7)
 	LEA	wide_MsgOn,A0
+	JSR	pt_CardStr41
 	JSR	pt_ShowStatusMsg
 	MOVEM.L	(A7)+,D0-D7/A0-A6
 .nowm:	TST.B	agus_On			; card output: changed samples over
