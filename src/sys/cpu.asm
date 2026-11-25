@@ -136,6 +136,9 @@ pt_CpuAboutFill:
 	TST.B	agus_On			;41 card output
 	BEQ.S	.na
 	LEA	.agus(PC),A1
+	TST.B	zzax_On
+	BEQ.S	.cp
+	LEA	.zzax(PC),A1
 	BRA.S	.cp
 .na:	TST.B	ahi_Active
 	BEQ.S	.p
@@ -156,6 +159,7 @@ pt_CpuAboutFill:
 .mix:	DC.B	"Paula 8 "
 .ahi:	DC.B	"AHI     "
 .agus:	DC.B	"AmiGUS  "
+.zzax:	DC.B	"ZZ9000AX"
 	EVEN
 
 ; fill str_AboutMem: free chip kb / fast mb, 6 digits each

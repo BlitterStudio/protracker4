@@ -86,8 +86,9 @@ pt_WideCheck:
 	ADDQ.L	#8,A7
 	JSR	pt_CloseFileHandle
 	JSR	pt_AgusDetect
+	JSR	pt_ZzaxDetect
 	LEA	wide_AskNoCard(PC),A0	; explain, then a short status
-	TST.L	agus_Card
+	BSR.W	pt_CardAny41		; amigus or zz9000ax
 	BEQ.S	.d
 	LEA	wide_AskSetup(PC),A0	; card there: output or rtg missing
 .d:	JSR	pt_SetupEditScreen	; notice, one button

@@ -29,9 +29,13 @@ pt_MixMusicEntry:
 .irq:	MOVEA.L	(A7)+,A0
 	MOVE.L	#pt_MixTickExit,(A7)	; irq call: do nothing (restore regs, ret)
 	RTS
+.hold:	MOVE.L	#pt_MixTickExit,(A7)	; zz9000ax: this tick waits for the card clock
+	RTS
 .live:	TST.B	agus_On			;41 card: did this tick start late?
 	BEQ.S	.nolate
 	JSR	pt_AgusStamp
+	TST.B	zx_Hold			; zz9000ax: ahead of the card, no tick now
+	BNE.S	.hold
 .nolate:
 	TST.B	snd_Switch		; output changes hands: no start, no stop
 	BNE.S	.mode
@@ -173,6 +177,7 @@ pt_MixExitHook:
 	JSR	pt_MidiOff		; serial port back
 	DK	'3'
 	JSR	pt_AgusClose
+	JSR	pt_ZzaxClose
 	DK	'4'
 	JSR	pt_WideFree
 	JSR	pt_Exe8Free		; save exe buffer

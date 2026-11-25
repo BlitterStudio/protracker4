@@ -299,7 +299,7 @@ set_Line3:	DS.B	64
 set_Num:	DS.B	16
 set_Num2:	DS.B	16
 	EVEN
-snd_Choice:	DS.B	1		; 0 none, 1 paula, 2 ahi, 3 amigus
+snd_Choice:	DS.B	1		; 0 none, 1 paula, 2 ahi, 3 amigus, 4 zz9000ax
 snd_VolDown:	DS.B	1		; tenths down, 0 = 100%
 snd_StereoDown:	DS.B	1		; quarters down, 0 = 100%
 snd_NameOk:	DS.B	1		; snd_AhiName valid for snd_AhiMode
@@ -412,13 +412,24 @@ mid_QTail:	DS.B	1
 mid_Pass:	DS.B	1		; main loop passes
 mid_PassSeen:	DS.B	1		; ... at the last pt_MidiTask
 agus_Tried:	DS.B	1
-agus_On:	DS.B	1		; output AMIGUS
+agus_On:	DS.B	1		; card output (amigus or zz9000ax, see zzax_On)
 agus_SyncCnt:	DS.B	1
 agus_Busy:	DS.B	1		; sample upload running
 agus_UpFail:	DS.B	1		; write fifo lost data (reported)
 agus_Late:	DS.B	1		; card runs still to skip (the tick started late)
-snd_Target:	DS.B	1		; output switch: 1 paula, 2 ahi, 3 amigus
+snd_Target:	DS.B	1		; output switch: 1 paula, 2 ahi, 3 amigus, 4 zz9000ax
 snd_Switch:	DS.B	1		; output changes hands: mixer keeps off paula
+zzax_Tried:	DS.B	1
+zzax_On:	DS.B	1		; the card output is the zz9000ax (agus_On too)
+zx_Ready:	DS.B	1		; voice session open and usable
+zx_Open:	DS.B	1		; voice session open (buffers to free)
+zx_Lost:	DS.B	1		; the card ended the session: the task opens a new one
+zx_Fails:	DS.B	1		; new sessions that failed in a row
+zx_Busy:	DS.B	1		; task uses the session: the tick keeps off
+zx_Hold:	DS.B	1		; this tick waits for the card clock
+zx_Fresh:	DS.B	1		; status of this tick already read
+zx_Anch:	DS.B	1		; timeline started (stamps are valid)
+snd_Alt:	DS.B	1		; both cards: the next card output is the zz9000ax
 	EVEN
 mid_Misc:	DS.L	1		; misc.resource
 mid_OldInt:	DS.L	1
@@ -433,6 +444,17 @@ agus_Spt5:	DS.L	1		; 5 * tick length in e clocks
 agus_ChBase:	DS.L	1		; tick: channel structs, voices, count
 agus_VoBase:	DS.L	1
 agus_NV:	DS.W	1
+zzax_Base:	DS.L	1		; zz9k.library
+zzax_Card:	DS.L	1		; same, revision 42 or later (0 = none)
+zzax_Mem:	DS.L	1		; session, status, records (ZXM_*), with output zz9000ax
+zx_Lead:	DS.L	1		; granted lead in 48 khz frames
+zx_Stamp:	DS.L	1		; stamp of the next tick
+zx_Spt16:	DS.L	1		; frames per tick, 16.16
+zx_SptKey:	DS.L	1		; agus_Spt5 it was made for
+zx_Frac:	DS.W	1		; fraction of the frames of a tick
+zx_PCnt:	DS.W	1		; records waiting for the ring: count, taken
+zx_PDone:	DS.W	1
+zx_Master:	DS.W	1		; gain the card has (-1 = none)
 wide_Pat:	DS.L	1		; wide module: patterns, 32 ch a row
 wide_PatSize:	DS.L	1
 wide_SaveBuf:	DS.L	1		; save: header + patterns, ch wide

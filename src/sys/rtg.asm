@@ -3574,6 +3574,8 @@ pt_ChanDefault41:
 	BNE.S	.ch8			; with the mixer or the card output
 	CMPI.B	#3,snd_Choice
 	BEQ.S	.ch8
+	CMPI.B	#4,snd_Choice
+	BEQ.S	.ch8
 	BRA.S	.ch4
 .n8:
 	CMP.B	#4,D0

@@ -5,6 +5,9 @@
 ; sdram slot n (512 kb): sample + copy of its loop (loop ends early), at
 ; +256 kb the sample backwards; slots 0-62 = samples 1-63; only changed
 ; samples are sent again (task)
+; the zz9000ax output (zzax41.asm) shares the tables, the voice update, the
+; levels, the positions and the volume of this file; its hooks are marked
+; zz9000ax below, the card is driven from zzax41.asm
 AGUS_TYPENAME	EQU	28		; struct AmiGUS: STRPTR type name
 AGUS_TYPEID	EQU	32		; UWORD: zorro / mini
 AGUS_WAVE	EQU	4		; APTR wavetable registers
@@ -188,6 +191,8 @@ pt_AgusOn:
 
 ; voices off, master 0, reservation free (task or exit)
 pt_AgusOff:
+	TST.B	zzax_On			; zz9000ax: its own off
+	BNE.W	pt_ZzaxOff
 	TST.B	agus_On
 	BEQ.S	.r
 	TST.B	mix_Active		; mixer first: else a tick takes the paula way
@@ -228,6 +233,8 @@ pt_AgusVoicesOff:
 
 ; d0.w = first card voice: it and the ones after it off, state cleared
 pt_AgusVoicesFrom41:
+	TST.B	zzax_On			; zz9000ax: Reset / STOP records
+	BNE.W	pt_ZzaxVoicesFrom41
 	TST.L	agus_Mem
 	BEQ.S	.r
 	TST.L	agus_Wave
@@ -312,6 +319,12 @@ pt_AgusSilFrom41:
 ; loop, sparse sum); a voice plays a sample only once it is there
 pt_AgusSync:
 	MOVEM.L	D0-D7/A0-A6,-(A7)
+	TST.B	zzax_On			; zz9000ax: heartbeat, lost session, then the same pass
+	BEQ.S	.ag
+	BSR.W	pt_ZzaxPoll
+	TST.B	zx_Ready
+	BEQ.W	.r
+.ag:
 	MOVE.L	dat_ModulePtr,D0
 	BEQ.W	.r
 	MOVEA.L	D0,A2
@@ -380,7 +393,11 @@ pt_AgusSync:
 	CMP.L	as_sum(A4),D3
 	BEQ.W	.nx
 .up:	SF	as_ok(A4)
-	ST	agus_Busy		; no voice writes between address and data
+	TST.B	zzax_On			; zz9000ax: the sample goes over the library
+	BEQ.S	.agup
+	BSR.W	pt_ZzaxUpload
+	BRA.W	.nx
+.agup:	ST	agus_Busy		; no voice writes between address and data
 	MOVE.W	#AW_FFULL,AW_INT(A3)	; clear the fifo full flag
 	IFD	DEBUGAUTO
 	CLR.W	AW_INT(A3)
@@ -553,6 +570,8 @@ pt_AgusSlot:
 ; or two, the main loop gets its time) instead of the system never
 ; leaving the irq
 pt_AgusStamp:
+	TST.B	zzax_On			; zz9000ax: the card clock decides if the tick runs
+	BNE.W	pt_ZzaxGate
 	MOVEM.L	D0-D2/A0,-(A7)
 	MOVEA.L	dat_CIABaseAddr,A0
 	MOVE.L	A0,D0
@@ -609,6 +628,10 @@ pt_AgusStepsOff:
 ;--- tick (replayer irq, all cpus): voice state -> card, positions on
 ; 8 voices, or 32 for a wide module (own channel structs and voices)
 pt_AgusRun:
+	TST.B	zx_Hold			; zz9000ax: this tick waited for the card
+	BEQ.S	.nh
+	RTS
+.nh:
 	TST.B	agus_Late		; the run before overran the tick: skip
 	BEQ.S	.go
 	SUBQ.B	#1,agus_Late
@@ -807,6 +830,8 @@ pt_AgusAdvance:
 pt_AgusTick:
 	TST.B	agus_On
 	BEQ.W	.x
+	TST.B	zzax_On			; zz9000ax: records instead of registers
+	BNE.W	pt_ZzaxTick
 	TST.B	agus_Busy		; task writes sdram: voices next tick
 	BNE.W	.x
 	MOVEM.L	D0-D7/A0-A6,-(A7)
@@ -1116,6 +1141,8 @@ pt_AgusVol:
 	CMP.L	av_vol(A4),D3
 	BEQ.S	.vr
 	MOVE.L	D3,av_vol(A4)
+	TST.B	zzax_On			; zz9000ax: SET record, same value
+	BNE.W	pt_ZzaxVolOut
 	MOVE.L	D3,AW_VOL(A3)
 	AGW	AW_VOL
 .vr:	RTS

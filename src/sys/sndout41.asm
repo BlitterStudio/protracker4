@@ -393,6 +393,9 @@ pt_SndRateStr41:
 	TST.B	agus_On
 	BEQ.S	.nag
 	LEA	snd_TxtCard(PC),A0
+	TST.B	zzax_On
+	BEQ.S	.cat
+	LEA	snd_TxtZzax(PC),A0
 	BRA.S	.cat
 .nag:	TST.B	ahi_Active
 	BEQ.S	.pa
@@ -485,6 +488,8 @@ ahi_MsgSil22:	DC.B	"AHI SILENT: TRYING 22 KHZ",0
 ahi_MsgSilP:	DC.B	"AHI SILENT: BACK TO PAULA",0
 snd_TxtCard:	DC.B	"CARD 192 KHZ",0
 snd_MsgCard:	DC.B	"AMIGUS: NO MIXER, 192 KHZ",0
+snd_TxtZzax:	DC.B	"CARD 48 KHZ",0
+snd_MsgZzax:	DC.B	"ZZ9000AX: NO MIXER, 48 KHZ",0
 snd_MsgStereo:	DC.B	"STEREO: AHI/AMIGUS ONLY",0
 ahi_MsgGone:	DC.B	"AHI MODE GONE: PREFS",0
 	EVEN

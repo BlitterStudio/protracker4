@@ -568,7 +568,13 @@ pt_SetSndText:
 	TST.B	agus_On
 	BEQ.S	.nag
 	LEA	set_TxtAgus(PC),A0
+	TST.B	zzax_On
+	BEQ.S	.ag
+	LEA	set_TxtZzax(PC),A0
 	BSR.W	pt_SetCat
+	LEA	set_TxtCard48(PC),A0
+	BRA.W	pt_SetCat
+.ag:	BSR.W	pt_SetCat
 	LEA	set_TxtCard192(PC),A0
 	BRA.W	pt_SetCat
 .nag:	TST.B	ahi_Active
@@ -617,6 +623,10 @@ pt_SetHint:
 	JSR	pt_AgusDetect
 	LEA	set_HintAgus(PC),A0	; 68000: card needs no mixer
 	TST.L	agus_Card
+	BNE.S	.r
+	JSR	pt_ZzaxDetect
+	LEA	set_HintZzax(PC),A0
+	TST.L	zzax_Card
 	BNE.S	.r
 	LEA	set_HintCpu(PC),A0
 	RTS
@@ -697,8 +707,27 @@ pt_SetPoll:
 	SF	snd_RateHeld
 .held:
 	TST.B	set_Ready		; first pass -> apply saved color scheme
-	BNE.S	.go
+	BNE.W	.go
 	BSR.W	pt_SchStart
+	CMPI.B	#4,snd_Choice		; saved output zz9000ax: no retry, the library answers at once
+	BNE.S	.nzx
+	JSR	pt_ZzaxDetect
+	MOVE.B	#1,snd_Choice
+	MOVE.B	#4,prf_AgusKeep		; stays in SAVE CONFIG until taken or changed
+	LEA	zzax_MsgNone,A0
+	TST.L	zzax_Card
+	BEQ.S	.zmsg
+	JSR	pt_ZzaxOn
+	TST.L	D0
+	BNE.S	.zbusy
+	JSR	pt_MixStop		; mixer may run for paula: restart for the card
+	SF	prf_AgusKeep
+	MOVE.B	#4,snd_Choice
+	BRA.W	.go
+.zbusy:	LEA	zzax_MsgBusy,A0
+.zmsg:	JSR	pt_StatusLater41
+	BRA.W	.go
+.nzx:
 	CMPI.B	#3,snd_Choice		; saved output amigus
 	BNE.S	.go
 	JSR	pt_AgusDetect		; card only now (paula: library stays shut)
@@ -774,6 +803,8 @@ set_TxtNativeN:	DC.B	"NATIVE NTSC",0
 set_TxtAhi:	DC.B	"AHI ",0
 set_TxtAgus:	DC.B	"AMIGUS WAVETABLE",0
 set_TxtCard192:	DC.B	" 192 KHZ",0
+set_TxtZzax:	DC.B	"ZZ9000AX VOICES",0
+set_TxtCard48:	DC.B	" 48 KHZ",0
 set_TxtPaula4:	DC.B	"PAULA 4CH DIRECT",0
 set_TxtPaula8:	DC.B	"PAULA MIX 8CH ",0
 set_TxtPaula8N:	DC.B	"PAULA 8CH, NO MIXER",0
@@ -782,6 +813,7 @@ set_HintCpu:	DC.B	"AHI AND RTG NEED A 68020",0
 set_HintAhiF:	DC.B	"AHI COULD NOT OPEN, PAULA IS USED",0
 set_HintRtgF:	DC.B	"NO SUITABLE RTG SCREEN MODE",0
 set_HintAgus:	DC.B	"AMIGUS SOUND CARD FOUND",0
+set_HintZzax:	DC.B	"ZZ9000AX SOUND CARD FOUND",0
 set_HintBuild:	DC.B	"BUILD "
 	STAMP
 	DC.B	0
@@ -910,40 +942,39 @@ set_MsgKeep:	DC.B	"4CH MODS: LOAD INTO 8CHN",0
 ; (switch straight from running playback hangs)
 pt_SndOutput:
 	JSR	pt_AgusDetect		; card offered from here on
+	JSR	pt_ZzaxDetect
 	MOVEA.L	ABSEXECBASE.W,A6
 	BTST	#1,(297,A6)		; ahi needs the mixer
 	BNE.S	.cpu
-	TST.L	agus_Card		; 68000: paula <-> amigus (no mixing)
+	BSR.W	pt_CardAny41		; 68000: paula <-> card (no mixing)
 	BEQ.S	.no20
 	JSR	pt_WaitMouseRelease
 	MOVEQ	#1,D0
 	TST.B	agus_On
 	BNE.S	.go
-	MOVEQ	#3,D0
+	BSR.W	pt_SndCardNext41	; amigus or zz9000ax, they take turns
 	BRA.S	.go
 .no20:	LEA	snd_Msg020(PC),A0
 	JMP	pt_ShowStatusMsg
 .cpu:	JSR	pt_WaitMouseRelease
-	MOVEQ	#1,D0			; paula -> ahi -> amigus (card only) -> paula
+	MOVEQ	#1,D0			; paula -> ahi -> card (amigus, zz9000ax) -> paula
 	TST.B	agus_On
 	BNE.S	.go
 	TST.B	ahi_NoPaula
 	BEQ.S	.frp
-	TST.L	agus_Card
-	BEQ.S	.go
-	MOVEQ	#3,D0
+	BSR.W	pt_SndCardNext41
+	BNE.S	.go
+	MOVEQ	#1,D0
 	BRA.S	.go
-.frp:	MOVEQ	#2,D0
-	TST.B	ahi_Failed		; failed once: no retry
-	BEQ.S	.try
-	TST.L	agus_Card		; no card to go to: a click asks ahi again
+.frp:	TST.B	ahi_Failed		; failed once: no retry
+	BEQ.S	.try0
+	BSR.W	pt_CardAny41		; no card to go to: a click asks ahi again
 	BNE.S	.noahi
 	SF	ahi_Failed
-.try:
-	BSR.W	pt_SndAhiThere		; no ahi.device: amigus or stay on paula
+.try0:	MOVEQ	#2,D0
+	BSR.W	pt_SndAhiThere		; no ahi.device: a card or stay on paula
 	BNE.S	.go
-.noahi:	MOVEQ	#3,D0
-	TST.L	agus_Card
+.noahi:	BSR.W	pt_SndCardNext41
 	BNE.S	.go
 	LEA	snd_MsgAhiFail(PC),A0
 	TST.B	ahi_Failed
@@ -1033,6 +1064,11 @@ pt_SndOutputDo:
 .do:	SF	prf_AgusKeep
 	TST.B	agus_On			; amigus -> paula
 	BEQ.S	.na
+	SF	snd_Alt			; both cards: the other one is next
+	TST.B	zzax_On
+	BNE.S	.alt
+	ST	snd_Alt
+.alt:
 	JSR	pt_WideTo8		; wide module: keep what paula plays
 	MOVE.W	D0,-(A7)
 	JSR	pt_AgusOff
@@ -1053,8 +1089,10 @@ pt_SndOutputDo:
 	BEQ.S	.m
 	LEA	snd_MsgWide4(PC),A0
 .m:	JMP	pt_ShowStatusMsg
-.na:	CMPI.B	#3,snd_Target
-	BNE.S	.nt
+.na:	CMPI.B	#4,snd_Target		; zz9000ax
+	BEQ.S	.zx
+	CMPI.B	#3,snd_Target
+	BNE.W	.nt
 	IFD	DEBUGAUTO
 	JSR	pt_AgusDetect
 	ENDC
@@ -1069,6 +1107,18 @@ pt_SndOutputDo:
 	BSR.W	pt_SndRefresh
 	MOVE.B	#3,snd_ResDefer
 	LEA	agus_MsgBusy,A0
+	JMP	pt_ShowStatusMsg
+.zx:	BSR.W	pt_SndAhiDrop		; ahi -> zz9000ax: paula back first
+	MOVE.B	#1,snd_Choice
+	JSR	pt_ZzaxOn
+	TST.L	D0
+	BNE.S	.zf
+	MOVE.B	#4,snd_Choice
+	BRA.W	.done
+.zf:	JSR	pt_MixStop
+	BSR.W	pt_SndRefresh
+	MOVE.B	#3,snd_ResDefer
+	LEA	zzax_MsgBusy,A0
 	JMP	pt_ShowStatusMsg
 .nt:	TST.B	ahi_NoPaula
 	BNE.W	.paula
@@ -1181,7 +1231,10 @@ pt_SndRate:
 	TST.B	agus_On			; card resamples, no mixer
 	BEQ.S	.nag
 	LEA	snd_MsgCard(PC),A0
-	JMP	pt_ShowStatusMsg
+	TST.B	zzax_On
+	BEQ.S	.cm
+	LEA	snd_MsgZzax(PC),A0
+.cm:	JMP	pt_ShowStatusMsg
 .nag:	TST.B	mix_Enabled
 	BNE.S	.ok
 	LEA	snd_Msg020(PC),A0
@@ -1520,6 +1573,9 @@ pt_SndDraw:
 .o0:	TST.B	agus_On
 	BEQ.S	.o1
 	LEA	snd_TxtAgus(PC),A0
+	TST.B	zzax_On
+	BEQ.S	.o1
+	LEA	snd_TxtZzaxO(PC),A0
 .o1:	BSR.W	pt_SetCat
 	TST.B	ahi_Failed
 	BEQ.S	.o2
@@ -1582,6 +1638,7 @@ _LVOAHI_NextAudioID	EQU	-102
 snd_TxtPaula:	DC.B	"PAULA",0
 snd_TxtAhi:	DC.B	"AHI",0
 snd_TxtAgus:	DC.B	"AMIGUS",0
+snd_TxtZzaxO:	DC.B	"ZZ9000AX",0
 snd_TxtFailed:	DC.B	" (NO AHI)",0
 snd_TxtPrefs:	DC.B	"PREFS",0
 snd_Msg020:	DC.B	"NEEDS A 68020",0
@@ -2154,7 +2211,7 @@ pt_PrefsLoad41:
 	BNE.W	.x
 	LEA	20(A0),A0
 	MOVE.B	(A0)+,D0
-	CMP.B	#3,D0			; 3 = amigus (taken in pt_SetPoll)
+	CMP.B	#4,D0			; 3 = amigus, 4 = zz9000ax (taken in pt_SetPoll)
 	BHI.W	.x
 	MOVE.B	D0,snd_Choice
 	MOVE.B	(A0)+,D0
@@ -2235,9 +2292,15 @@ pt_PrefsSave41:
 .c:	TST.B	agus_On
 	BEQ.S	.c2
 	MOVEQ	#3,D0
-.c2:	TST.B	prf_AgusKeep		; amigus saved, card missing or busy
+	TST.B	zzax_On
+	BEQ.S	.c2
+	MOVEQ	#4,D0
+.c2:	TST.B	prf_AgusKeep		; amigus or zz9000ax saved, card missing or busy
 	BEQ.S	.c3
 	MOVEQ	#3,D0
+	CMPI.B	#4,prf_AgusKeep
+	BNE.S	.c3
+	MOVEQ	#4,D0
 .c3:	MOVE.B	D0,(A0)+
 	MOVE.B	snd_VolDown,(A0)+
 	MOVE.B	snd_StereoDown,(A0)+
@@ -2354,7 +2417,13 @@ pt_AutoAhi:
 	MOVE.B	#3,snd_Choice
 	ST	prf_AutoAgus
 	BRA.W	.r
-.noag:	MOVEA.L	ABSEXECBASE.W,A6
+.noag:	JSR	pt_ZzaxDetect		;41 then the zz9000ax (voice engine library), the same way
+	TST.L	zzax_Card
+	BEQ.S	.nozx
+	MOVE.B	#4,snd_Choice
+	MOVE.B	#2,prf_AutoAgus
+	BRA.W	.r
+.nozx:	MOVEA.L	ABSEXECBASE.W,A6
 	BTST	#1,(297,A6)		;41 ahi needs a 68020
 	BEQ.W	.r
 ; read ENV:Sys/ahi.prefs without dos requester (pr_WindowPtr not -1 yet)
@@ -2520,10 +2589,10 @@ pt_AutoRtgWin:
 ; from pt_SetPoll: report "AUTO SETUP: ..." once after ~2 s
 pt_AutoMsg:
 	TST.B	prf_MsgDone
-	BNE.S	.r
+	BNE.W	.r
 	ADDQ.W	#1,prf_MsgCnt
 	CMPI.W	#100,prf_MsgCnt
-	BCS.S	.r
+	BCS.W	.r
 	ST	prf_MsgDone
 	MOVE.B	prf_AutoAhi,D0
 	OR.B	prf_AutoRtg,D0
@@ -2533,9 +2602,15 @@ pt_AutoMsg:
 	TST.B	prf_AutoAgus
 	BEQ.S	.ahi
 	LEA	aut_MsgAgusR(PC),A0
-	TST.B	prf_AutoRtg
+	CMPI.B	#2,prf_AutoAgus		; zz9000ax
+	BNE.S	.ag
+	LEA	aut_MsgZzaxR(PC),A0
+.ag:	TST.B	prf_AutoRtg
 	BNE.S	.show
 	LEA	aut_MsgAgus(PC),A0
+	CMPI.B	#2,prf_AutoAgus
+	BNE.S	.show
+	LEA	aut_MsgZzax(PC),A0
 	BRA.S	.show
 .ahi:	LEA	aut_MsgBoth(PC),A0
 	TST.B	prf_AutoAhi
@@ -2559,6 +2634,8 @@ aut_MsgRtg:	DC.B	"AUTO SETUP: RTG SCREEN",0
 aut_MsgRtgW:	DC.B	"AUTO SETUP: RTG WINDOW",0
 aut_MsgAgus:	DC.B	"AUTO SETUP: AMIGUS SOUND CARD",0
 aut_MsgAgusR:	DC.B	"AUTO SETUP: AMIGUS + RTG",0
+aut_MsgZzax:	DC.B	"AUTO SETUP: ZZ9000AX VOICES",0
+aut_MsgZzaxR:	DC.B	"AUTO SETUP: ZZ9000AX + RTG",0
 aut_CgxName:	DC.B	"cybergraphics.library",0
 aut_HintAuto:	DC.B	"AUTO SETUP - SAVE CONFIG TO KEEP IT",0
 	EVEN

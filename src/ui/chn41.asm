@@ -34,7 +34,7 @@ pt_ChnStep41:
 .p1:	CMP.W	#8,D4
 	BLS.S	.go
 	LEA	chn_MsgNoCard(PC),A0
-	TST.L	agus_Card		; card there: how to get more
+	BSR.W	pt_CardAny41		; card there: how to get more
 	BEQ.S	.m
 	LEA	chn_MsgCard(PC),A0
 	BRA.S	.m

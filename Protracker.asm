@@ -174,6 +174,7 @@ STAMP	MACRO
 	INCLUDE	"src/io/dyn41.asm"
 	INCLUDE	"src/io/midi41.asm"
 	INCLUDE	"src/sys/amigus41.asm"
+	INCLUDE	"src/sys/zzax41.asm"
 	INCLUDE	"src/sys/agfake41.asm"
 	INCLUDE	"src/sys/sndout41.asm"
 	INCLUDE	"src/io/wide41.asm"
